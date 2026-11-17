@@ -11,8 +11,14 @@
     <main>
       <h1>Confluence Tools CI</h1>
 
-      <section>
-        <h2>Адреса Confluence</h2>
+      <div class="tabs" role="tablist" aria-label="Разделы настроек">
+        <button id="tab-services" type="button" role="tab" aria-selected="true" aria-controls="panel-services">Адреса сервисов</button>
+        <button id="tab-modules" type="button" role="tab" aria-selected="false" aria-controls="panel-modules" tabindex="-1">Модули</button>
+        <button id="tab-updates" type="button" role="tab" aria-selected="false" aria-controls="panel-updates" tabindex="-1">Обновление</button>
+      </div>
+
+      <section id="panel-services" role="tabpanel" aria-labelledby="tab-services">
+        <h2>Адреса сервисов</h2>
         <p class="hint">
           Расширение работает только на перечисленных адресах. Для каждого адреса Chrome один раз попросит разрешение.
         </p>
@@ -24,13 +30,13 @@
         <p id="host-error" class="error" hidden></p>
       </section>
 
-      <section>
+      <section id="panel-modules" role="tabpanel" aria-labelledby="tab-modules" hidden>
         <h2>Модули</h2>
         <div id="features"></div>
       </section>
 
-      <section>
-        <h2>Уведомления об обновлениях</h2>
+      <section id="panel-updates" role="tabpanel" aria-labelledby="tab-updates" hidden>
+        <h2>Обновление</h2>
         <p class="hint">При запуске браузера версия расширения сравнивается с version в package.json.
           При доступном обновлении на значке появляется «!», а здесь — ссылка на сборки. Пустой адрес отключает проверку.</p>
         <label for="update-repository">URL файла package.json</label>
