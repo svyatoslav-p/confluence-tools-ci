@@ -167,7 +167,7 @@ export function startApp(): (() => void) | undefined {
   }
 
   function checkEditor() {
-    const found = !disposed && settings?.hosts.includes(location.origin) ? findEditor() : null;
+    const found = !disposed && settings?.enabled !== false && settings?.hosts.includes(location.origin) ? findEditor() : null;
     if (found === editor) return false;
     teardownEditor();
     editor = found;
@@ -179,7 +179,7 @@ export function startApp(): (() => void) | undefined {
   function actionAvailable(feature: Feature, action: MenuAction): boolean {
     const state = settings?.features[feature.id];
     const mode: PageMode = editor ? 'editor' : 'view';
-    if (disposed || !settings?.hosts.includes(location.origin) || !state?.enabled) return false;
+    if (disposed || settings?.enabled === false || !settings?.hosts.includes(location.origin) || !state?.enabled) return false;
     if (action.mode !== 'any' && action.mode !== mode) return false;
     try {
       return action.visible?.(state.values) ?? true;
@@ -325,7 +325,7 @@ export function startApp(): (() => void) | undefined {
     if (message.type !== 'settings') return;
     settings = message.settings;
     // Шаблоны доступа Chrome не учитывают порт: соблюдаем точный список адресов.
-    if (!settings.hosts.includes(location.origin)) {
+    if (settings.enabled === false || !settings.hosts.includes(location.origin)) {
       suspend();
       return;
     }

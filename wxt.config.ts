@@ -6,6 +6,6 @@ export default defineConfig({
     description: 'Набор инструментов для Confluence: быстрые действия в редакторе и операции со страницами',
     permissions: ['storage', 'scripting'],
     optional_host_permissions: ['*://*/*'],
-    action: { default_title: 'Confluence Tools CI — настройки' },
+    action: { default_title: 'Confluence Tools CI — управление модулями' },
   },
 });

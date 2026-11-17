@@ -2,7 +2,17 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { compareHistoryVersions } = loadTs('features/change-history/tables.ts');
+const { compareHistoryVersions, historyTableOptions } = loadTs('features/change-history/tables.ts');
+
+test('параметры поиска истории сохраняют умолчания и разрешают поиск только по колонкам', () => {
+  const defaults = historyTableOptions();
+  assert.equal(defaults.heading, 'История');
+  assert.deepEqual([...defaults.headers], ['SA Task', 'Story', 'Ответственный аналитик', 'Описание', 'Версия']);
+  const options = historyTableOptions({ historyHeading: '', historyTaskHeader: '  Задача  аналитика ', historyVersionHeader: 'Релиз' });
+  assert.equal(options.heading, ''); assert.equal(options.headers[0], 'Задача аналитика'); assert.equal(options.headers[4], 'Релиз');
+  assert.throws(() => historyTableOptions({ historyVersionHeader: ' ' }), /всех пяти/);
+  assert.throws(() => historyTableOptions({ historyVersionHeader: ' story ' }), /различаться/);
+});
 
 test('история сортируется по числовым частям версии, неизвестные номера идут в конце', () => {
   const versions = ['Other', '[v1.10]', 'v2.0 Title', '[v1.2]', 'Draft', 'v1.0', '1.1'];
@@ -14,7 +24,7 @@ test('история сортируется по числовым частям �
 });
 
 function fixture({ changed = true, updated = false, status = 200 } = {}) {
-  const requests = [], messages = [];
+  const requests = [], messages = [], values = { historyHeading: 'Журнал изменений', historyVersionHeader: 'Релиз' };
   const child = { id: '2', title: '[v1.1] Example', space: { key: 'SPC' }, ancestors: [{ id: '1' }], body: { storage: { value: 'child' } } };
   const parent = { title: 'Parent', version: { number: 5 }, body: { storage: { value: 'original' } } };
   const feature = loadTs('features/change-history/index.ts', { globals: {
@@ -25,11 +35,12 @@ function fixture({ changed = true, updated = false, status = 200 } = {}) {
       return { ok: options.method !== 'PUT' || status === 200, status,
         json: async () => new URL(url).pathname.endsWith('/2') ? child : parent };
     },
-  }, imports: { './tables': { updateHistory: (p, c, page) => {
+  }, imports: { './tables': { updateHistory: (p, c, page, settings) => {
     assert.equal(p, 'original'); assert.equal(c, 'child'); assert.equal(page.id, '2');
+    assert.equal(settings, values);
     return { content: 'updated', changed, updated };
   } } } }).default;
-  return { requests, messages, child, run: () => feature.actions[0].run({ notify: (...args) => messages.push(args) }), feature };
+  return { requests, messages, child, run: () => feature.actions[0].run({ values, notify: (...args) => messages.push(args) }), feature };
 }
 
 test('история доступна при просмотре; сохраняется только непосредственный родитель с увеличением версии', async () => {

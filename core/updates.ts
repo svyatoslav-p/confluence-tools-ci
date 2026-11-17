@@ -4,7 +4,7 @@ import { compareVersions, parseUpdateSource, readPackageVersion, storedUpdateSou
 
 async function clearUpdateBadge() {
   await chrome.action.setBadgeText({ text: '' });
-  await chrome.action.setTitle({ title: 'Confluence Tools CI — настройки' });
+  await chrome.action.setTitle({ title: 'Confluence Tools CI — управление модулями' });
 }
 
 export async function checkForUpdates(): Promise<void> {

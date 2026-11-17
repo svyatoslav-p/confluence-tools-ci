@@ -2,7 +2,7 @@
 import { eventToHotkey, findHotkeyConflict, formatHotkey } from '../../core/hotkeys';
 import { definitions } from '../../core/definitions';
 import { hostToPattern, isRecord, normalizeHost } from '../../core/settings';
-import { loadSettings, saveSettings } from '../../core/storage';
+import { loadSettings, onSettingsChanged, saveSettings } from '../../core/storage';
 import { parseUpdateSource, storedUpdateSource, UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY } from '../../core/update-source';
 import type { FeatureDefinition, SettingField, Settings } from '../../core/types';
 
@@ -382,6 +382,13 @@ function renderFeatures() {
 
 async function init() {
   settings = await loadSettings();
+  const unsubscribe = onSettingsChanged((current) => {
+    if (JSON.stringify(current) === JSON.stringify(settings)) return;
+    settings = current;
+    renderFeatures();
+    void renderHosts();
+  });
+  window.addEventListener('pagehide', () => unsubscribe(), { once: true });
   const updates = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
   updateSourceInput.value = storedUpdateSource(updates);
   chrome.storage.onChanged.addListener((changes, area) => {

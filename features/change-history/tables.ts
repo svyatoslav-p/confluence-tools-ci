@@ -1,6 +1,21 @@
+import definition from './definition';
+
 const HEADERS = ['SA Task', 'Story', 'Ответственный аналитик', 'Описание'];
+const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+const matchesText = (left: string, right: string) => normalize(left).toLocaleLowerCase('ru') === normalize(right).toLocaleLowerCase('ru');
 const text = (node: Element) => (node.textContent ?? '').replace(/\s+/g, ' ').trim();
 const escape = (value: string) => value.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;' })[c]!);
+
+export function historyTableOptions(values: Record<string, string> = {}) {
+  const value = (key: string) => normalize(values[key] ?? definition.settings.find((field) => field.key === key)!.default);
+  const heading = value('historyHeading');
+  const headers = ['historyTaskHeader', 'historyStoryHeader', 'historyAnalystHeader', 'historyDescriptionHeader', 'historyVersionHeader'].map(value);
+  if (headers.some((header) => !header)) throw new Error('Заполните названия всех пяти колонок таблицы истории в настройках модуля.');
+  if (new Set(headers.map((header) => header.toLocaleLowerCase('ru'))).size !== headers.length) {
+    throw new Error('Названия колонок таблицы истории в настройках модуля должны различаться.');
+  }
+  return { heading, headers };
+}
 
 /** XML нужен для макросов ac:/ri:. Диапазоны позволяют менять только нужную строку,
  * сохраняя исходную разметку всей остальной страницы, включая CDATA и макросы. */
@@ -53,10 +68,10 @@ function findTable(doc: Document, heading: string, headers: string[]) {
       if (/^h[1-6]$/.test(node.tagName) && !node.closest('table')) previousHeading = text(node);
     }
     const first = rows(table)[0];
-    return previousHeading === heading && first &&
-      [...first.children].length === headers.length && [...first.children].every((cell, i) => text(cell) === headers[i]);
+    return (!heading || matchesText(previousHeading, heading)) && first &&
+      [...first.children].length === headers.length && [...first.children].every((cell, i) => matchesText(text(cell), headers[i]));
   });
-  if (candidates.length !== 1) throw new Error(`Ожидается одна таблица «${heading}» с колонками: ${headers.join(', ')}. Найдено: ${candidates.length}.`);
+  if (candidates.length !== 1) throw new Error(`Ожидается одна таблица${heading ? ` под заголовком «${heading}»` : ''} с колонками: ${headers.join(', ')}. Найдено: ${candidates.length}.`);
   return candidates[0];
 }
 
@@ -88,13 +103,14 @@ function rowVersion(row: Element): string {
     .find((title) => versionParts(title)) ?? label;
 }
 
-export function updateHistory(parent: string, child: string, page: ChildPage): { content: string; updated: boolean; changed: boolean } {
+export function updateHistory(parent: string, child: string, page: ChildPage, values: Record<string, string> = {}): { content: string; updated: boolean; changed: boolean } {
+  const options = historyTableOptions(values);
   const from = parseStorage(child), to = parseStorage(parent);
   const sourceRows = rows(findTable(from.doc, 'Задачи', HEADERS));
   cells(sourceRows[0], 4);
   if (sourceRows.length !== 2) throw new Error('В таблице «Задачи» должна быть одна строка данных под заголовком.');
   const sourceCells = cells(sourceRows[1], 4);
-  const targetTable = findTable(to.doc, 'История', [...HEADERS, 'Версия']);
+  const targetTable = findTable(to.doc, options.heading, options.headers);
   const targetRows = rows(targetTable);
   cells(targetRows[0], 5);
   const matches = targetRows.slice(1).filter((row) => {

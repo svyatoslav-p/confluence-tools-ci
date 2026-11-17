@@ -37,7 +37,7 @@ const feature: Feature = {
           !Number.isInteger(parent.version?.number) || typeof parent.title !== 'string' || typeof child.title !== 'string' || typeof child.space?.key !== 'string') {
           throw new Error('Confluence вернул неполные данные страницы.');
         }
-        const result = updateHistory(parent.body.storage.value, child.body.storage.value, child);
+        const result = updateHistory(parent.body.storage.value, child.body.storage.value, child, ctx.values);
         if (!result.changed) { ctx.notify('История уже актуальна.', 'success'); return; }
         await request(parentId, { method: 'PUT', body: JSON.stringify({ type: 'page', title: parent.title,
           version: { number: parent.version.number + 1, message: 'Добавить в историю: ' + child.title },

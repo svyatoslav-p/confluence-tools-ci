@@ -20,7 +20,7 @@ function validValue(value: unknown, field: SettingField): string {
 export function normalizeSettings(raw: unknown, features: FeatureDefinition[]): Settings {
   const saved = isRecord(raw) ? raw : {};
   const states = isRecord(saved.features) ? saved.features : {};
-  const result: Settings = { hosts: normalizeHosts(saved.hosts), features: {} };
+  const result: Settings = { enabled: typeof saved.enabled === 'boolean' ? saved.enabled : true, hosts: normalizeHosts(saved.hosts), features: {} };
   for (const feature of features) {
     const state = states[feature.id];
     const savedState = isRecord(state) ? state : {};

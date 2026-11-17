@@ -105,6 +105,8 @@ export interface FeatureState {
 }
 
 export interface Settings {
+  /** Общая приостановка функций; настройки отдельных модулей сохраняются. */
+  enabled: boolean;
   /** Адреса Confluence, на которых работает расширение. */
   hosts: string[];
   features: Record<string, FeatureState>;

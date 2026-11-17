@@ -28,6 +28,19 @@ test('пустой список хостов, отключение модуля 
   assert.equal(result.features.panel.values.key, '');
 });
 
+test('общая приостановка сохраняется отдельно от включения модулей', async () => {
+  assert.equal(normalizeSettings({}, [feature]).enabled, true);
+  const settings = normalizeSettings({ enabled: false, features: { panel: { enabled: true, values: {} } } }, [feature]);
+  assert.equal(settings.enabled, false); assert.equal(settings.features.panel.enabled, true);
+  let saved;
+  const { saveSettings } = loadTs('core/storage.ts', { globals: {
+    chrome: { storage: { local: { set: async (value) => { saved = value; } } } },
+  }, imports: { './definitions': { definitions: [feature] } } });
+  await saveSettings(settings);
+  assert.equal(saved.settings.enabled, false);
+  assert.equal(saved.settings.features.panel.enabled, true);
+});
+
 test('адреса нормализуются и не включают учётные данные, wildcard и другой протокол', () => {
   assert.equal(normalizeHost('https://Example.com/path'), 'https://example.com');
   for (const host of ['https://u:p@example.com', 'https://*.example.com', 'file:///tmp', 'ftp://example.com']) assert.equal(normalizeHost(host), null);

@@ -193,6 +193,22 @@ test('справка пункта меню открывается отдельн
   } finally { f.dispose(); }
 });
 
+test('общая пауза убирает UI и модули, возобновление сохраняет их настройки', () => {
+  const f = fixture();
+  try {
+    const state = f.send();
+    state.enabled = false; f.send(state);
+    assert.equal(f.count.stops.panel, 1); assert.equal(f.count.stops.other, 1);
+    assert.equal(f.count.themeStopped, 1);
+    assert.equal(f.document.documentElement.children[0].isConnected, false);
+    assert.equal(f.count.unsubscribed, 0);
+    state.features.other.enabled = false;
+    state.enabled = true; f.send(state);
+    assert.equal(f.count.starts.panel, 2); assert.equal(f.count.starts.other, 1);
+    assert.equal(state.features.panel.values.color, '#008000');
+  } finally { f.dispose(); }
+});
+
 test('наблюдатель темы отключается явной функцией очистки', () => {
   let callback, connected = false, disconnects = 0, current = 'dark';
   class Observer {

@@ -47,7 +47,6 @@ export default defineBackground(() => {
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area === 'local' && changes[STORAGE_KEY]) sync();
   });
-  chrome.action.onClicked.addListener(openOptions);
   chrome.runtime.onMessage.addListener((message: unknown, sender) => {
     if (sender.id === chrome.runtime.id && isRecord(message) && message.type === 'open-options') openOptions();
   });

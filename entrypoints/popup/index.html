@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Confluence Tools CI</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header><img src="/icon/32.png" width="28" height="28" alt="" /><h1>Confluence Tools CI</h1><span id="version" class="hint"></span></header>
+      <label class="toggle overall"><span>Расширение работает</span><input id="enabled" type="checkbox" role="switch" disabled /></label>
+      <p id="status" class="hint" role="status">Загрузка…</p>
+      <fieldset id="modules" disabled>
+        <legend>Модули</legend>
+        <p class="hint module-hint">Включение отдельных функций</p>
+        <div id="module-list"></div>
+      </fieldset>
+      <p id="error" class="error" role="alert" hidden></p>
+      <button id="open-options" type="button" class="primary">Настройки</button>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

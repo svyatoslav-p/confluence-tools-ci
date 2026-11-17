@@ -20,7 +20,7 @@ export async function loadHosts(): Promise<string[]> {
 export async function saveSettings(settings: Settings): Promise<void> {
   // Сохраняем только значения, отличающиеся от значений по умолчанию:
   // если в новой версии умолчание изменится, пользователь его получит.
-  const stored: Settings = { hosts: [...settings.hosts], features: {} };
+  const stored: Settings = { enabled: settings.enabled, hosts: [...settings.hosts], features: {} };
   for (const feature of definitions) {
     const state = settings.features[feature.id];
     if (!state) continue;
