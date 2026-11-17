@@ -15,6 +15,15 @@ export function eventToHotkey(event: KeyboardEvent): string | null {
   return parts.join('+');
 }
 
+/** Проверка сохранённого сочетания с Ctrl, Alt или Meta. */
+export function isHotkey(value: string): boolean {
+  if (value === '') return true;
+  if (!/^(Ctrl\+)?(Alt\+)?(Shift\+)?(Meta\+)?[A-Za-z][A-Za-z0-9]*$/.test(value)) return false;
+  const parts = value.split('+');
+  const code = parts.pop()!;
+  return !MODIFIER_CODES.test(code) && parts.some((part) => ['Ctrl', 'Alt', 'Meta'].includes(part));
+}
+
 /** Вид сочетания для показа пользователю: «Alt+KeyZ» → «Alt+Z». */
 export function formatHotkey(hotkey: string): string {
   return hotkey.replace(/\b(Key|Digit)(?=\w$)/, '');

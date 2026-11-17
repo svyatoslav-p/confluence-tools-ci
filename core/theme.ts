@@ -41,11 +41,13 @@ export function currentTheme(): Theme {
 }
 
 /** Проставляет тему контейнеру интерфейса и следит за её сменой в Confluence. */
-export function watchTheme(host: HTMLElement): void {
+export function watchTheme(host: HTMLElement): () => void {
   const apply = () => host.setAttribute('data-theme', currentTheme());
   apply();
-  new MutationObserver(apply).observe(document.documentElement, {
+  const observer = new MutationObserver(apply);
+  observer.observe(document.documentElement, {
     attributes: true,
     attributeFilter: ['data-color-mode'],
   });
+  return () => observer.disconnect();
 }

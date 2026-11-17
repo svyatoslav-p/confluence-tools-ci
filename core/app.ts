@@ -54,7 +54,7 @@ function isConfluencePage(): boolean {
 }
 
 function findEditor(): TinyEditor | null {
-  const editor = (window as any).tinymce?.activeEditor as TinyEditor | undefined;
+  const editor = window.tinymce?.activeEditor;
   if (!editor || editor.removed || !editor.initialized) return null;
   try {
     return editor.getDoc() ? editor : null;
@@ -63,21 +63,24 @@ function findEditor(): TinyEditor | null {
   }
 }
 
-export function startApp(): void {
-  const flag = '__confluenceExtLoaded';
-  if (window.top !== window || (window as any)[flag] || !isConfluencePage()) return;
-  (window as any)[flag] = true;
+export function startApp(): (() => void) | undefined {
+  if (window.top !== window || window.__confluenceExtLoaded || !isConfluencePage()) return;
+  window.__confluenceExtLoaded = true;
 
   let settings: Settings | null = null;
   let editor: TinyEditor | null = null;
-  let editorCleanups: Array<() => void> = [];
+  const runningFeatures = new Map<string, { values: string; cleanup: () => void }>();
+  let editorTimer: ReturnType<typeof setInterval> | undefined;
+  let stopTheme: (() => void) | undefined;
+  let disposed = false;
+  const controller = new AbortController();
+  const events = { signal: controller.signal };
 
   // --- Контейнер интерфейса ---
   const host = document.createElement('div');
   host.id = 'confluence-ext-root';
   host.style.cssText = 'position: fixed; top: 0; left: 0; z-index: 2147483647;';
   const root = host.attachShadow({ mode: 'open' });
-  watchTheme(host);
   const style = document.createElement('style');
   style.textContent = STYLE;
   const launcher = document.createElement('div');
@@ -90,6 +93,7 @@ export function startApp(): void {
   button.className = 'launcher-button';
   button.innerHTML = ICON_SVG;
   button.title = 'Confluence Tools CI';
+  button.setAttribute('aria-label', button.title);
   launcher.append(menu, button);
   root.append(style, launcher);
 
@@ -116,18 +120,30 @@ export function startApp(): void {
   }
 
   // --- Модули в редакторе ---
-  function teardownEditor() {
-    for (const cleanup of editorCleanups) cleanup();
-    editorCleanups = [];
+  function stopFeature(id: string) {
+    const running = runningFeatures.get(id);
+    if (!running) return;
+    runningFeatures.delete(id);
+    try { running.cleanup(); } catch (error) { console.error('[Confluence Tools CI] Ошибка очистки модуля', error); }
   }
 
-  function setupEditorFeatures() {
-    teardownEditor();
-    if (!editor) return;
-    for (const feature of enabledFeatures()) {
-      if (!feature.setupEditor) continue;
+  function teardownEditor() {
+    for (const id of runningFeatures.keys()) stopFeature(id);
+  }
+
+  function syncEditorFeatures() {
+    for (const feature of features) {
+      const state = settings?.features[feature.id];
+      const values = JSON.stringify(state?.values);
+      if (!editor || !state?.enabled || !feature.setupEditor) {
+        stopFeature(feature.id);
+        continue;
+      }
+      if (runningFeatures.get(feature.id)?.values === values) continue;
+      stopFeature(feature.id);
       try {
-        editorCleanups.push(feature.setupEditor({ ...contextFor(feature), editor }));
+        const cleanup = feature.setupEditor({ ...contextFor(feature), editor });
+        runningFeatures.set(feature.id, { values, cleanup });
       } catch (error) {
         console.error(`[Confluence Tools CI] Модуль «${feature.title}» не запустился`, error);
       }
@@ -136,9 +152,11 @@ export function startApp(): void {
 
   function checkEditor() {
     const found = findEditor();
-    if (found === editor) return;
+    if (found === editor) return false;
+    teardownEditor();
     editor = found;
-    setupEditorFeatures();
+    syncEditorFeatures();
+    return true;
   }
 
   // --- Меню ---
@@ -187,6 +205,7 @@ export function startApp(): void {
     item.className = 'menu-item';
     item.textContent = title;
     // preventDefault на mousedown сохраняет фокус и выделение в редакторе.
+    // Пункты пересоздаются при открытии меню: их обработчики живут вместе с узлами.
     item.addEventListener('mousedown', (event) => event.preventDefault());
     item.addEventListener('click', () => {
       menu.hidden = true;
@@ -195,31 +214,65 @@ export function startApp(): void {
     return item;
   }
 
-  button.addEventListener('mousedown', (event) => event.preventDefault());
+  button.addEventListener('mousedown', (event) => event.preventDefault(), events);
   button.addEventListener('click', () => {
     if (menu.hidden) renderMenu();
     menu.hidden = !menu.hidden;
-  });
+  }, events);
   document.addEventListener('mousedown', (event) => {
     if (event.target !== host) menu.hidden = true;
-  });
+  }, events);
+
+  // При удалении адреса останавливаем UI, но сохраняем мост для повторного включения.
+  function suspend() {
+    teardownEditor();
+    clearInterval(editorTimer);
+    editorTimer = undefined;
+    editor = null;
+    stopTheme?.();
+    stopTheme = undefined;
+    clearTimeout(toastTimer);
+    toast?.remove();
+    toast = null;
+    menu.hidden = true;
+    menu.replaceChildren();
+    host.remove();
+  }
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    suspend();
+    unsubscribe();
+    controller.abort();
+    delete window.__confluenceExtLoaded;
+  }
+
+  // При помещении в back/forward cache браузер сам приостанавливает страницу.
+  window.addEventListener('pagehide', (event) => {
+    if (!event.persisted) dispose();
+  }, events);
 
   // --- Запуск ---
-  onBridge((message) => {
+  const unsubscribe = onBridge((message) => {
     if (message.type === 'extension-reloaded') {
       notify('Расширение Confluence Tools CI было обновлено. Перезагрузите страницу.', 'error');
       return;
     }
     if (message.type !== 'settings') return;
-    const first = settings === null;
     settings = message.settings;
-    if (first) {
-      document.documentElement.append(host);
-      setInterval(checkEditor, EDITOR_POLL_MS);
-      checkEditor();
-    } else {
-      setupEditorFeatures();
+    // Шаблоны доступа Chrome не учитывают порт: соблюдаем точный список адресов.
+    if (!settings.hosts.includes(location.origin)) {
+      suspend();
+      return;
     }
+    if (!host.isConnected) {
+      stopTheme = watchTheme(host);
+      document.documentElement.append(host);
+    }
+    editorTimer ??= setInterval(checkEditor, EDITOR_POLL_MS);
+    if (!checkEditor()) syncEditorFeatures();
   });
   postBridge({ type: 'get-settings' });
+  return dispose;
 }

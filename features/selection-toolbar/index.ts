@@ -1,9 +1,24 @@
 // Панель быстрого форматирования: появляется над выделенным текстом в редакторе,
 // пока зажат Ctrl. Те же действия доступны по горячим клавишам.
+import definition from './definition';
 import { eventToHotkey, formatHotkey } from '../../core/hotkeys';
 import type { Feature, FeatureContext, TinyEditor } from '../../core/types';
 
 type Values = Record<string, string>;
+
+/** Ограничиваем обход DOM областью выделения и её родительскими пунктами. */
+function selectedListItems(editor: TinyEditor): HTMLLIElement[] {
+  const range = editor.selection.getRng();
+  const node = range.commonAncestorContainer;
+  const element = node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement;
+  if (!(element instanceof editor.getDoc().defaultView!.Element)) return [];
+  const items = new Set<HTMLLIElement>();
+  for (const li of element.querySelectorAll<HTMLLIElement>('li')) {
+    if (range.intersectsNode(li)) items.add(li);
+  }
+  for (let li = element.closest('li'); li; li = li.parentElement?.closest('li') ?? null) items.add(li);
+  return [...items];
+}
 
 /** Задержка перед показом, чтобы панель не мигала на Ctrl+C / Ctrl+V и при выделении мышью. */
 const SHOW_DELAY_MS = 200;
@@ -37,18 +52,20 @@ function setStyleAttr(element: Element, style: string | null) {
  */
 function keepListItemStyles(editor: TinyEditor, action: () => void) {
   const before = new Map<Element, string | null>();
-  for (const li of editor.getBody().querySelectorAll('li')) before.set(li, li.getAttribute('style'));
-  action();
-  for (const [li, style] of before) {
-    if (li.getAttribute('style') !== style) setStyleAttr(li, style);
+  for (const li of selectedListItems(editor)) before.set(li, li.getAttribute('style'));
+  try {
+    action();
+  } finally {
+    for (const [li, style] of before) {
+      if (li.getAttribute('style') !== style) setStyleAttr(li, style);
+    }
   }
 }
 
 /** Снимает цвет с самих пунктов списка, текст которых попал в выделение. */
-function cleanListItemColors(editor: TinyEditor, range: Range) {
-  for (const li of editor.getBody().querySelectorAll<HTMLElement>('li[style]')) {
-    const ownContent = [...li.childNodes].filter((node) => !/^(OL|UL)$/.test(node.nodeName));
-    if (!li.style.color || !ownContent.some((node) => range.intersectsNode(node))) continue;
+function cleanListItemColors(items: HTMLLIElement[]) {
+  for (const li of items) {
+    if (!li.style.color) continue;
     li.style.color = '';
     setStyleAttr(li, li.getAttribute('style'));
   }
@@ -56,9 +73,13 @@ function cleanListItemColors(editor: TinyEditor, range: Range) {
 
 function clean(editor: TinyEditor) {
   editor.undoManager.transact(() => {
-    const range = editor.selection.getRng().cloneRange();
+    const range = editor.selection.getRng();
+    // Определяем пункты до RemoveFormat: команда может удалить узлы границ Range.
+    const items = selectedListItems(editor).filter((li) =>
+      [...li.childNodes].some((node) => !/^(OL|UL)$/.test(node.nodeName) && range.intersectsNode(node)),
+    );
     editor.execCommand('RemoveFormat');
-    cleanListItemColors(editor, range);
+    cleanListItemColors(items);
   });
   editor.nodeChanged();
 }
@@ -70,14 +91,6 @@ function paint(editor: TinyEditor, color: string) {
     });
   });
   editor.nodeChanged();
-}
-
-function green(editor: TinyEditor, values: Values) {
-  paint(editor, values.greenColor);
-}
-
-function yellow(editor: TinyEditor, values: Values) {
-  paint(editor, values.yellowColor);
 }
 
 function redStrike(editor: TinyEditor, values: Values) {
@@ -108,12 +121,8 @@ const STYLE = `
 function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   const { editor, values, root } = ctx;
   const editorDoc = editor.getDoc();
-  const cleanups: Array<() => void> = [];
-
-  function listen(target: EventTarget, type: string, handler: (event: any) => void) {
-    target.addEventListener(type, handler, true);
-    cleanups.push(() => target.removeEventListener(type, handler, true));
-  }
+  const controller = new AbortController();
+  const events = { capture: true, signal: controller.signal };
 
   // --- Панель ---
   const style = document.createElement('style');
@@ -121,22 +130,20 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   const toolbar = document.createElement('div');
   toolbar.className = 'st-toolbar';
   root.append(style, toolbar);
-  cleanups.push(() => {
-    style.remove();
-    toolbar.remove();
-  });
+  toolbar.setAttribute('role', 'toolbar');
+  toolbar.setAttribute('aria-label', 'Быстрое форматирование');
 
   function addButton(label: HTMLElement, title: string, hotkey: string, action: () => void) {
     const button = document.createElement('button');
     button.type = 'button';
     button.append(label);
     button.title = hotkey ? `${title} (${formatHotkey(hotkey)})` : title;
+    button.setAttribute('aria-label', title);
     // mousedown + preventDefault: фокус и выделение остаются в редакторе.
     button.addEventListener('mousedown', (event) => {
       event.preventDefault();
-      action();
-      hide();
     });
+    button.addEventListener('click', () => { run(action); });
     toolbar.append(button);
   }
 
@@ -148,19 +155,30 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     return span;
   }
 
-  addButton(label('Tx'), 'Очистить стиль', values.hotkeyClean, () => clean(editor));
-  addButton(label('A', editorColor(values.redColor), true), 'Красный зачёркнутый', values.hotkeyRed, () =>
-    redStrike(editor, values),
-  );
-  addButton(label('A', editorColor(values.greenColor)), 'Зелёный', values.hotkeyGreen, () => green(editor, values));
-  addButton(label('A', editorColor(values.yellowColor)), 'Жёлтый', values.hotkeyYellow, () =>
-    yellow(editor, values),
-  );
+  const actions = [
+    { text: 'Tx', title: 'Очистить стиль', hotkey: values.hotkeyClean, run: () => clean(editor) },
+    { text: 'A', title: 'Красный зачёркнутый', color: values.redColor, strike: true, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
+    { text: 'A', title: 'Зелёный', color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paint(editor, values.greenColor) },
+    { text: 'A', title: 'Жёлтый', color: values.yellowColor, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
+  ];
+  for (const action of actions) {
+    addButton(label(action.text, action.color && editorColor(action.color), action.strike), action.title, action.hotkey, action.run);
+  }
 
-  // Режим «без Ctrl»: панель показывается сразу, как только появилось выделение.
+  // Режим «без Ctrl»: показываем панель после завершения выделения.
   const always = values.showWithoutCtrl === 'true';
   let ctrlAlone = false;
+  let selecting = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+
+  function run(action: () => void) {
+    if (editor.selection.isCollapsed()) return;
+    try { action(); } catch (error) {
+      console.error('[Confluence Tools CI] Ошибка форматирования', error);
+      ctx.notify('Не удалось изменить форматирование.', 'error');
+    }
+    hide();
+  }
 
   function hide() {
     clearTimeout(timer);
@@ -172,7 +190,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
    * forward — выделяли слева направо / сверху вниз.
    */
   function selectionEnd(): { x: number; top: number; bottom: number; forward: boolean } {
-    const whole = editor.selection.getRng().getBoundingClientRect();
+    const range = editor.selection.getRng();
     const sel = editor.selection.getSel();
     let forward = true;
     if (sel?.anchorNode && sel.focusNode) {
@@ -187,18 +205,23 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
       if (rect) return { x: rect.left, top: rect.top, bottom: rect.bottom, forward };
     }
     // Курсор стоит на границе элемента и своих координат не имеет — берём край всего выделения.
-    const x = whole.left + whole.width / 2;
+    const rects = [...range.getClientRects()].filter((rect) => rect.width || rect.height);
+    const whole = (forward ? rects.at(-1) : rects[0]) ?? range.getBoundingClientRect();
+    const x = forward ? whole.right : whole.left;
     return forward
       ? { x, top: whole.bottom, bottom: whole.bottom, forward }
       : { x, top: whole.top, bottom: whole.top, forward };
   }
 
   function show() {
-    if ((!always && !ctrlAlone) || editor.selection.isCollapsed()) return hide();
+    if (selecting || !editorDoc.hasFocus() || (!always && !ctrlAlone) || editor.selection.isCollapsed()) return hide();
     const end = selectionEnd();
     const frame = editor.iframeElement?.getBoundingClientRect();
     const frameLeft = frame?.left ?? 0;
     const frameTop = frame?.top ?? 0;
+    const caretTop = frameTop + end.top;
+    const caretBottom = frameTop + end.bottom;
+    if (caretBottom < Math.max(0, frameTop) || caretTop > Math.min(window.innerHeight, frame?.bottom ?? window.innerHeight)) return hide();
     toolbar.style.display = 'flex';
     const width = toolbar.offsetWidth;
     const height = toolbar.offsetHeight;
@@ -218,11 +241,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   // --- Клавиатура ---
-  const hotkeys: Record<string, () => void> = {};
-  if (values.hotkeyClean) hotkeys[values.hotkeyClean] = () => clean(editor);
-  if (values.hotkeyGreen) hotkeys[values.hotkeyGreen] = () => green(editor, values);
-  if (values.hotkeyRed) hotkeys[values.hotkeyRed] = () => redStrike(editor, values);
-  if (values.hotkeyYellow) hotkeys[values.hotkeyYellow] = () => yellow(editor, values);
+  const hotkeys = new Map(actions.filter((action) => action.hotkey).map((action) => [action.hotkey, action.run]));
 
   function schedule() {
     clearTimeout(timer);
@@ -250,84 +269,69 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   function onEditorHotkey(event: KeyboardEvent) {
+    if (event.isComposing || editor.selection.isCollapsed()) return;
     const hotkey = eventToHotkey(event);
-    const action = hotkey && hotkeys[hotkey];
+    const action = hotkey && hotkeys.get(hotkey);
     if (!action) return;
     event.preventDefault();
     event.stopPropagation();
-    action();
+    run(action);
   }
 
   for (const doc of [editorDoc, document]) {
-    listen(doc, 'keydown', onKeyDown);
-    listen(doc, 'keyup', onKeyUp);
+    doc.addEventListener('keydown', onKeyDown, events);
+    doc.addEventListener('keyup', onKeyUp, events);
   }
-  listen(editorDoc, 'keydown', onEditorHotkey);
+  editorDoc.addEventListener('keydown', onEditorHotkey, events);
   if (always) {
     // Пока тянут мышью, панель не показываем — только когда кнопку отпустили.
-    let selecting = false;
-    listen(editorDoc, 'mousedown', (event: MouseEvent) => {
+    editorDoc.addEventListener('mousedown', (event) => {
       if (event.button !== 0) return;
       selecting = true;
       hide();
-    });
+    }, events);
     for (const doc of [editorDoc, document]) {
-      listen(doc, 'mouseup', (event: MouseEvent) => {
+      doc.addEventListener('mouseup', (event) => {
         if (event.button !== 0 || !selecting) return;
         selecting = false;
         schedule();
-      });
+      }, events);
     }
     // Выделение с клавиатуры (Shift+стрелки) и двойным щелчком.
-    listen(editorDoc, 'selectionchange', () => {
+    editorDoc.addEventListener('selectionchange', () => {
       if (!selecting) schedule();
-    });
+    }, events);
   }
   // При прокрутке панель переезжает вслед за выделением.
   for (const target of [editorDoc, window]) {
-    listen(target, 'scroll', () => {
+    target.addEventListener('scroll', () => {
       if (toolbar.style.display !== 'none') show();
-    });
+    }, events);
   }
-  listen(window, 'blur', () => {
+  editorDoc.defaultView?.addEventListener('blur', () => {
+    selecting = false;
+    ctrlAlone = false;
+    hide();
+  }, events);
+  window.addEventListener('resize', hide, events);
+  window.addEventListener('blur', () => {
     // Фокус между страницей и iframe редактора переходит без потери Ctrl,
     // поэтому сбрасываем состояние только когда окно действительно неактивно.
     if (!document.hasFocus()) {
+      selecting = false;
       ctrlAlone = false;
       hide();
     }
-  });
+  }, events);
 
   return () => {
     clearTimeout(timer);
-    for (const cleanup of cleanups) {
-      try {
-        cleanup();
-      } catch {
-        // Документ редактора мог быть уже удалён.
-      }
-    }
+    controller.abort();
+    style.remove();
+    toolbar.remove();
   };
 }
 
-const HOTKEYS_GROUP = 'Горячие клавиши';
-
-const feature: Feature = {
-  id: 'selection-toolbar',
-  title: 'Панель быстрого форматирования',
-  description:
-    'В редакторе выделите текст и зажмите Ctrl — над выделением появится панель: очистить стиль, красный зачёркнутый, зелёный, жёлтый. Панель можно показывать и без Ctrl.',
-  settings: [
-    { key: 'showWithoutCtrl', label: 'Показывать панель сразу при выделении, без Ctrl', type: 'boolean', default: 'false' },
-    { key: 'greenColor', label: 'Цвет «зелёный»', type: 'color', default: '#1f845a' },
-    { key: 'redColor', label: 'Цвет «красный»', type: 'color', default: '#c9372c' },
-    { key: 'yellowColor', label: 'Цвет «жёлтый»', type: 'color', default: '#946f00' },
-    { key: 'hotkeyClean', label: 'Очистить стиль', type: 'hotkey', default: 'Alt+KeyZ', group: HOTKEYS_GROUP },
-    { key: 'hotkeyRed', label: 'Красный зачёркнутый', type: 'hotkey', default: 'Alt+KeyX', group: HOTKEYS_GROUP },
-    { key: 'hotkeyGreen', label: 'Зелёный', type: 'hotkey', default: 'Alt+KeyC', group: HOTKEYS_GROUP },
-    { key: 'hotkeyYellow', label: 'Жёлтый', type: 'hotkey', default: 'Alt+KeyV', group: HOTKEYS_GROUP },
-  ],
-  setupEditor,
-};
+const feature: Feature = { ...definition, setupEditor };
 
 export default feature;

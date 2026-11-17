@@ -22,6 +22,13 @@ export interface TinyEditor {
   };
 }
 
+declare global {
+  interface Window {
+    tinymce?: { activeEditor?: TinyEditor };
+    __confluenceExtLoaded?: boolean;
+  }
+}
+
 /** Значения всех настроек хранятся строками; у 'boolean' это 'true' или 'false'. */
 export type FieldType = 'color' | 'hotkey' | 'text' | 'boolean';
 
@@ -67,17 +74,16 @@ export interface MenuAction {
   run(ctx: FeatureContext): void | Promise<void>;
 }
 
-/**
- * Модуль расширения. Каждый модуль лежит в features/<имя>/index.ts
- * и экспортирует объект Feature по умолчанию.
- * Код на верхнем уровне файла не должен обращаться к странице:
- * этот же файл импортируется страницей настроек.
- */
-export interface Feature {
+/** Только данные: доступны настройкам, хранилищу и мосту без загрузки реализации. */
+export interface FeatureDefinition {
   id: string;
   title: string;
   description: string;
   settings: SettingField[];
+}
+
+/** Реализация features/<имя>/index.ts, выполняемая только приложением страницы. */
+export interface Feature extends FeatureDefinition {
   /** Пункты плавающего меню. */
   actions?: MenuAction[];
   /**

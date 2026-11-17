@@ -1,6 +1,6 @@
 import type { Feature } from './types';
 
-// Модули подхватываются автоматически: достаточно создать features/<имя>/index.ts.
+// Только приложение страницы импортирует реализации; служебные части используют definitions.ts.
 const modules = import.meta.glob<{ default: Feature }>('../features/*/index.ts', { eager: true });
 
 export const features: Feature[] = Object.values(modules)

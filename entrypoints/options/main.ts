@@ -1,9 +1,9 @@
 // Страница настроек. Блоки модулей строятся из описаний Feature.settings.
 import { eventToHotkey, formatHotkey } from '../../core/hotkeys';
-import { features } from '../../core/registry';
+import { definitions } from '../../core/definitions';
 import { hostToPattern, normalizeHost } from '../../core/settings';
 import { loadSettings, saveSettings } from '../../core/storage';
-import type { Feature, SettingField, Settings } from '../../core/types';
+import type { FeatureDefinition, SettingField, Settings } from '../../core/types';
 
 const hostsList = document.querySelector<HTMLUListElement>('#hosts')!;
 const hostForm = document.querySelector<HTMLFormElement>('#host-form')!;
@@ -12,6 +12,11 @@ const hostError = document.querySelector<HTMLElement>('#host-error')!;
 const featuresBox = document.querySelector<HTMLElement>('#features')!;
 
 let settings: Settings;
+let hostsRender = 0;
+const saveError = el('p', 'error');
+saveError.hidden = true;
+saveError.setAttribute('role', 'alert');
+featuresBox.before(saveError);
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text = ''): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag);
@@ -21,7 +26,14 @@ function el<K extends keyof HTMLElementTagNameMap>(tag: K, className = '', text 
 }
 
 async function save() {
-  await saveSettings(settings);
+  try {
+    await saveSettings(settings);
+    saveError.hidden = true;
+  } catch (error) {
+    saveError.textContent = 'Не удалось сохранить настройки. Повторите изменение.';
+    saveError.hidden = false;
+    console.error('[Confluence Tools CI] Ошибка сохранения', error);
+  }
 }
 
 // --- Адреса ---
@@ -32,9 +44,10 @@ function showHostError(message: string) {
 }
 
 async function renderHosts() {
-  hostsList.replaceChildren();
+  const render = ++hostsRender;
+  const list = document.createDocumentFragment();
   if (!settings.hosts.length) {
-    hostsList.append(el('li', 'hint', 'Адреса не заданы — расширение нигде не работает.'));
+    list.append(el('li', 'hint', 'Адреса не заданы — расширение нигде не работает.'));
   }
   for (const host of settings.hosts) {
     const origins = [hostToPattern(host)];
@@ -61,8 +74,9 @@ async function renderHosts() {
       await renderHosts();
     });
     item.append(remove);
-    hostsList.append(item);
+    list.append(item);
   }
+  if (render === hostsRender) hostsList.replaceChildren(list);
 }
 
 hostForm.addEventListener('submit', async (event) => {
@@ -82,10 +96,11 @@ hostForm.addEventListener('submit', async (event) => {
 
 // --- Модули ---
 
-function renderField(feature: Feature, field: SettingField): HTMLElement[] {
+function renderField(feature: FeatureDefinition, field: SettingField): HTMLElement[] {
   const values = settings.features[feature.id].values;
   const label = el('label', '', field.label);
   let control: HTMLElement;
+  let fieldInput: HTMLInputElement;
 
   if (field.type === 'hotkey') {
     const input = el('input');
@@ -103,6 +118,14 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
       const hotkey = eventToHotkey(event);
       // Сочетание без Ctrl/Alt/Meta мешало бы обычному набору текста.
       if (!hotkey || !(event.ctrlKey || event.altKey || event.metaKey)) return;
+      const duplicate = feature.settings.find((other) =>
+        other.type === 'hotkey' && other.key !== field.key && values[other.key] === hotkey,
+      );
+      if (duplicate) {
+        saveError.textContent = `Это сочетание уже задано: ${duplicate.label}`;
+        saveError.hidden = false;
+        return;
+      }
       values[field.key] = hotkey;
       show();
       await save();
@@ -114,6 +137,7 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
       show();
       await save();
     });
+    fieldInput = input;
     control = el('div', 'hotkey');
     control.append(input, clear);
     input.title = 'Нажмите на поле и введите сочетание с Ctrl или Alt';
@@ -127,6 +151,7 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
       // От флажка может зависеть вид других настроек.
       if (feature.settings.some((f) => f.enabledBy === field.key)) renderFeatures();
     });
+    fieldInput = input;
     control = input;
   } else if (field.type === 'color') {
     const input = el('input');
@@ -136,6 +161,7 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
       values[field.key] = input.value;
       await save();
     });
+    fieldInput = input;
     control = input;
   } else {
     const input = el('input');
@@ -145,9 +171,10 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
       values[field.key] = input.value;
       await save();
     });
+    fieldInput = input;
     control = input;
   }
-  label.htmlFor = control.id = `${feature.id}-${field.key}`;
+  label.htmlFor = fieldInput.id = `${feature.id}-${field.key}`;
   if (field.enabledBy && values[field.enabledBy] !== 'true') {
     label.classList.add('inactive');
     control.classList.add('inactive');
@@ -157,7 +184,7 @@ function renderField(feature: Feature, field: SettingField): HTMLElement[] {
 
 function renderFeatures() {
   featuresBox.replaceChildren();
-  for (const feature of features) {
+  for (const feature of definitions) {
     const state = settings.features[feature.id];
     const box = el('div', 'feature');
 
