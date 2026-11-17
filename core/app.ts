@@ -34,6 +34,22 @@ const STYLE = `
     font: inherit; color: inherit; text-align: left; cursor: pointer;
   }
   .menu-item:hover { background: var(--ct-bg-hover); }
+  .menu-row { position: relative; display: flex; align-items: center; }
+  .menu-row .menu-item { flex: 1; width: auto; white-space: nowrap; }
+  .menu-info {
+    flex: none; margin-right: 8px; width: 28px; height: 28px; border: 0;
+    border-radius: 50%; background: none; color: var(--ct-text-muted); cursor: pointer;
+    font: 18px Arial, sans-serif;
+  }
+  .menu-info:hover { background: var(--ct-bg-hover); }
+  .menu-help {
+    position: absolute; right: 0; bottom: calc(100% + 8px); z-index: 1;
+    width: 290px; max-width: calc(100vw - 56px); box-sizing: border-box;
+    max-height: 40vh; overflow-y: auto; padding: 10px 14px;
+    background: var(--ct-bg); color: var(--ct-text); border: 1px solid var(--ct-border);
+    border-radius: 6px; box-shadow: 0 4px 12px var(--ct-shadow);
+  }
+  .menu-help[hidden] { display: none; }
   .menu-empty { padding: 7px 14px; color: var(--ct-text-muted); }
   .menu-separator { height: 1px; margin: 6px 0; background: var(--ct-border); }
   .toast {
@@ -180,14 +196,15 @@ export function startApp(): (() => void) | undefined {
     for (const feature of enabledFeatures()) {
       const actions = (feature.actions ?? []).filter((action) => actionAvailable(feature, action));
       if (!actions.length) continue;
-      const title = document.createElement('div');
-      title.className = 'menu-title';
-      title.textContent = feature.title;
-      menu.append(title);
+      if (actions.length > 1) {
+        const title = document.createElement('div');
+        title.className = 'menu-title';
+        title.textContent = feature.title;
+        menu.append(title);
+      }
       for (const action of actions) {
         count++;
-        menu.append(
-          menuItem(action.title, async () => {
+        const item = menuItem(action.title, async () => {
             if (disposed) return;
             try {
               checkEditor();
@@ -200,8 +217,38 @@ export function startApp(): (() => void) | undefined {
               console.error(`[Confluence Tools CI] ${action.title}`, error);
               notify(`Ошибка: ${error instanceof Error ? error.message : String(error)}`, 'error');
             }
-          }),
-        );
+          });
+        if (action.description) {
+          const row = document.createElement('div');
+          row.className = 'menu-row';
+          const info = document.createElement('button');
+          info.type = 'button';
+          info.className = 'menu-info';
+          info.textContent = 'ⓘ';
+          info.setAttribute('aria-label', `О функции «${action.title}»`);
+          info.setAttribute('aria-expanded', 'false');
+          const help = document.createElement('div');
+          help.className = 'menu-help';
+          help.id = `help-${feature.id}-${action.id}`;
+          help.setAttribute('role', 'tooltip');
+          help.hidden = true;
+          help.textContent = action.description;
+          info.setAttribute('aria-controls', help.id);
+          info.setAttribute('aria-describedby', help.id);
+          info.addEventListener('click', () => {
+            help.hidden = !help.hidden;
+            info.setAttribute('aria-expanded', String(!help.hidden));
+          });
+          info.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape') {
+              help.hidden = true;
+              info.setAttribute('aria-expanded', 'false');
+              event.stopPropagation();
+            }
+          });
+          row.append(item, info, help);
+          menu.append(row);
+        } else menu.append(item);
       }
     }
     if (!count) {

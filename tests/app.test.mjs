@@ -174,6 +174,25 @@ test('команда из открытого меню перепроверяет
   }
 });
 
+test('справка пункта меню открывается отдельно и не запускает действие', () => {
+  const f = fixture(); let runs = 0;
+  f.features[0].actions = [{ id: 'history', title: 'History', description: 'Help text', mode: 'any', run() { runs++; } }];
+  try {
+    f.send();
+    const menu = f.openMenu();
+    const row = menu.children.find((node) => node.className === 'menu-row');
+    const help = row.children.find((node) => node.className === 'menu-help');
+    const info = row.children[1];
+    assert.equal(help.hidden, true);
+    info.dispatchEvent(new Event('click'));
+    assert.equal(help.hidden, false); assert.equal(runs, 0); assert.equal(menu.hidden, false);
+    info.dispatchEvent(new Event('click'));
+    assert.equal(help.hidden, true);
+    row.children[0].dispatchEvent(new Event('click'));
+    assert.equal(runs, 1); assert.equal(menu.hidden, true);
+  } finally { f.dispose(); }
+});
+
 test('наблюдатель темы отключается явной функцией очистки', () => {
   let callback, connected = false, disconnects = 0, current = 'dark';
   class Observer {

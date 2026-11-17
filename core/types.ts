@@ -71,6 +71,8 @@ export interface FeatureContext {
 export interface MenuAction {
   id: string;
   title: string;
+  /** Текст справки по отдельной кнопке рядом с действием. */
+  description?: string;
   /** В каком режиме страницы пункт доступен. */
   mode: PageMode | 'any';
   /** Если задано и возвращает false, пункт в меню не показывается (зависит от настроек модуля). */
