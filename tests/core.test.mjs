@@ -74,7 +74,7 @@ test('регистрация не меняется при настройке ц�
     runtime: { id: 'extension', onInstalled: event('installed'), onStartup: event('startup'), onMessage: event('message'), openOptionsPage: async () => {} },
     action: { onClicked: event('action') }, storage: { onChanged: event('storage') },
   };
-  loadTs('entrypoints/background.ts', { globals: { chrome, __BUILD_COMMIT__: '' }, imports: {
+  loadTs('entrypoints/background.ts', { globals: { chrome, __BUILD_TIMESTAMP__: '' }, imports: {
     '../core/updates': { setupUpdateChecks() {} },
     '#imports': { defineBackground: (callback) => callback() },
     '../core/storage': { loadHosts: async () => state.hosts },

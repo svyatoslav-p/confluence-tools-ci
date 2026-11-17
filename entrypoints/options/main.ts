@@ -1,9 +1,9 @@
 // Страница настроек. Блоки модулей строятся из описаний Feature.settings.
 import { eventToHotkey, findHotkeyConflict, formatHotkey } from '../../core/hotkeys';
 import { definitions } from '../../core/definitions';
-import { hostToPattern, normalizeHost } from '../../core/settings';
+import { hostToPattern, isRecord, normalizeHost } from '../../core/settings';
 import { loadSettings, saveSettings } from '../../core/storage';
-import { parseUpdateRepository, UPDATE_REPOSITORY_KEY } from '../../core/update-source';
+import { parseUpdateSource, storedUpdateSource, UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY } from '../../core/update-source';
 import type { FeatureDefinition, SettingField, Settings } from '../../core/types';
 
 const hostsList = document.querySelector<HTMLUListElement>('#hosts')!;
@@ -12,8 +12,14 @@ const hostInput = document.querySelector<HTMLInputElement>('#host-input')!;
 const hostError = document.querySelector<HTMLElement>('#host-error')!;
 const featuresBox = document.querySelector<HTMLElement>('#features')!;
 const updateForm = document.querySelector<HTMLFormElement>('#update-form')!;
-const updateRepository = document.querySelector<HTMLInputElement>('#update-repository')!;
+const updateSourceInput = document.querySelector<HTMLInputElement>('#update-repository')!;
 const updateFeedback = document.querySelector<HTMLElement>('#update-feedback')!;
+const updateStatus = document.querySelector<HTMLElement>('#update-status')!;
+const updateArtifact = document.querySelector<HTMLAnchorElement>('#update-artifact')!;
+const checkUpdatesButton = document.querySelector<HTMLButtonElement>('#check-updates')!;
+let savedUpdateSource = '';
+let updateRender = 0;
+let manualUpdateCheck = false;
 
 let settings: Settings;
 let hostsRender = 0;
@@ -98,26 +104,89 @@ hostForm.addEventListener('submit', async (event) => {
   await renderHosts();
 });
 
-// --- Модули ---
+// --- Обновления ---
+
+async function renderUpdateStatus() {
+  const render = ++updateRender;
+  const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY]);
+  if (render !== updateRender) return;
+  const source = parseUpdateSource(storedUpdateSource(stored));
+  savedUpdateSource = source?.url ?? '';
+  const raw = stored[UPDATE_STATE_KEY];
+  const state = isRecord(raw) && raw.source === savedUpdateSource ? raw : {};
+  const checking = state.checking === true;
+  checkUpdatesButton.disabled = manualUpdateCheck || !source;
+  checkUpdatesButton.textContent = manualUpdateCheck ? 'Проверяем…' : 'Проверить обновление';
+  updateArtifact.hidden = true;
+  updateArtifact.removeAttribute('href');
+  updateStatus.className = 'hint';
+  if (!source) { updateStatus.textContent = 'Проверка обновлений отключена.'; return; }
+  if (checking) { updateStatus.textContent = 'Проверяем обновления…'; return; }
+  const available = state.available === true;
+  updateStatus.textContent = available ? 'Доступно обновление.' : state.checkedAt ? 'Новых обновлений не найдено.' : 'Обновления ещё не проверялись.';
+  const download = parseUpdateSource(state.downloadUrl);
+  if (available && download) {
+    updateArtifact.href = download.url;
+    updateArtifact.textContent = 'Открыть сборки';
+    updateArtifact.hidden = false;
+  }
+  if (available && typeof state.builtAt === 'string') updateStatus.textContent += ` Дата сборки: ${state.builtAt}`;
+  if (typeof state.error === 'string' && state.error) {
+    updateStatus.className = 'error';
+    updateStatus.textContent = (available ? 'Ранее найдено обновление. ' : '') + state.error;
+  }
+}
+
+checkUpdatesButton.addEventListener('click', async () => {
+  updateFeedback.hidden = true;
+  const source = parseUpdateSource(updateSourceInput.value);
+  if (!source || source.url !== savedUpdateSource) {
+    updateFeedback.hidden = false;
+    updateFeedback.className = 'error';
+    updateFeedback.textContent = 'Сначала сохраните изменённый источник обновлений.';
+    return;
+  }
+  try {
+    if (!await chrome.permissions.request({ origins: [source.permission] })) {
+      updateStatus.className = 'error';
+      updateStatus.textContent = 'Для проверки обновлений нужен доступ к адресу update.json.';
+      return;
+    }
+    manualUpdateCheck = true;
+    checkUpdatesButton.disabled = true;
+    checkUpdatesButton.textContent = 'Проверяем…';
+    updateStatus.textContent = 'Проверяем обновления…';
+    await chrome.runtime.sendMessage({ type: 'check-updates' });
+    manualUpdateCheck = false;
+    await renderUpdateStatus();
+  } catch {
+    manualUpdateCheck = false;
+    checkUpdatesButton.disabled = false;
+    checkUpdatesButton.textContent = 'Проверить обновление';
+    updateStatus.className = 'error';
+    updateStatus.textContent = 'Не удалось выполнить проверку. Перезагрузите расширение и повторите попытку.';
+  }
+});
 
 updateForm.addEventListener('submit', async (event) => {
   event.preventDefault();
-  const input = updateRepository.value.trim();
-  const source = parseUpdateRepository(input);
+  const input = updateSourceInput.value.trim();
+  const source = parseUpdateSource(input);
   updateFeedback.hidden = false;
   updateFeedback.className = 'error';
   if (input && !source) {
-    updateFeedback.textContent = 'Укажите адрес публичного репозитория https://github.com/владелец/репозиторий.';
+    updateFeedback.textContent = 'Укажите полный HTTPS-адрес файла update.json.';
     return;
   }
   try {
     // Запрашиваем доступ непосредственно по действию пользователя, до других await.
-    if (source && !await chrome.permissions.request({ origins: ['https://api.github.com/*'] })) {
-      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к GitHub API. Нажмите «Сохранить» и разрешите доступ.';
+    if (source && !await chrome.permissions.request({ origins: [source.permission] })) {
+      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к адресу update.json. Нажмите «Сохранить» и разрешите доступ.';
       return;
     }
-    await chrome.storage.local.set({ [UPDATE_REPOSITORY_KEY]: source?.url ?? '' });
-    updateRepository.value = source?.url ?? '';
+    await chrome.storage.local.set({ [UPDATE_SOURCE_KEY]: source?.url ?? '' });
+    savedUpdateSource = source?.url ?? '';
+    updateSourceInput.value = source?.url ?? '';
     updateFeedback.className = 'hint';
     updateFeedback.textContent = source ? 'Источник сохранён. Проверка выполняется при запуске браузера и смене источника.' : 'Проверка обновлений отключена.';
   } catch (error) {
@@ -125,6 +194,8 @@ updateForm.addEventListener('submit', async (event) => {
     console.error('[Confluence Tools CI]', error);
   }
 });
+
+// --- Модули ---
 
 function renderField(feature: FeatureDefinition, field: SettingField): HTMLElement[] {
   const values = settings.features[feature.id].values;
@@ -278,8 +349,12 @@ function renderFeatures() {
 
 async function init() {
   settings = await loadSettings();
-  const updates = await chrome.storage.local.get(UPDATE_REPOSITORY_KEY);
-  updateRepository.value = parseUpdateRepository(updates[UPDATE_REPOSITORY_KEY])?.url ?? '';
+  const updates = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
+  updateSourceInput.value = storedUpdateSource(updates);
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area === 'local' && (changes[UPDATE_SOURCE_KEY] || changes[UPDATE_STATE_KEY])) void renderUpdateStatus();
+  });
+  await renderUpdateStatus();
   renderFeatures();
   await renderHosts();
   chrome.permissions.onAdded.addListener(() => void renderHosts());
