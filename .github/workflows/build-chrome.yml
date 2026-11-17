@@ -48,14 +48,19 @@ jobs:
         run: node --test tests/bundle-check.mjs
 
       - name: Prepare download
+        id: package
         run: |
+          version=$(node -p "require('./package.json').version")
+          built_at=$(TZ=Europe/Moscow date '+%Y-%m-%d_%H-%M-%S-MSK')
+          filename="confluence-tools-ci-chrome-${version}-${built_at}.zip"
           mkdir -p .output/artifact
-          cp .output/confluence-ext-*-chrome.zip .output/artifact/confluence-tools-ci-chrome.zip
+          cp ".output/confluence-ext-${version}-chrome.zip" ".output/artifact/${filename}"
+          echo "path=.output/artifact/${filename}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Chrome ZIP
         uses: actions/upload-artifact@v7
         with:
-          path: .output/artifact/confluence-tools-ci-chrome.zip
+          path: ${{ steps.package.outputs.path }}
           archive: false
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 90
