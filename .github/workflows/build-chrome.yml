@@ -1,0 +1,61 @@
+name: Build Chrome extension
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and package Chrome extension
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Check TypeScript
+        run: npm run compile
+
+      - name: Run regression tests
+        run: npm test
+
+      - name: Build Chrome ZIP
+        run: npm run zip -- --browser chrome
+
+      - name: Check bundle boundaries
+        run: node --test tests/bundle-check.mjs
+
+      - name: Prepare download
+        run: |
+          mkdir -p .output/artifact
+          cp .output/confluence-ext-*-chrome.zip .output/artifact/confluence-tools-ci-chrome.zip
+
+      - name: Upload Chrome ZIP
+        uses: actions/upload-artifact@v7
+        with:
+          path: .output/artifact/confluence-tools-ci-chrome.zip
+          archive: false
+          if-no-files-found: error
+          retention-days: 30
