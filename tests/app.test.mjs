@@ -6,7 +6,7 @@ function fixture() {
   class Element extends EventTarget {
     style = {}; children = []; isConnected = false;
     append(...nodes) { for (const node of nodes) { this.children.push(node); node.isConnected = true; } }
-    attachShadow() { return new Element(); }
+    attachShadow() { this.shadowRoot = new Element(); return this.shadowRoot; }
     remove() { this.isConnected = false; }
     setAttribute() {}
     replaceChildren(...nodes) { this.children = []; this.append(...nodes); }
@@ -19,7 +19,7 @@ function fixture() {
   let receive;
   const count = { starts: { panel: 0, other: 0 }, stops: { panel: 0, other: 0 },
     intervals: 0, cleared: 0, themeStarted: 0, themeStopped: 0, unsubscribed: 0 };
-  const features = ['panel', 'other'].map((id) => ({ id, setupEditor: () => {
+  const features = ['panel', 'other'].map((id) => ({ id, title: id, setupEditor: () => {
     count.starts[id]++; return () => { count.stops[id]++; };
   } }));
   const origin = 'http://example.com:8095';
@@ -41,7 +41,16 @@ function fixture() {
     receive({ type: 'settings', settings });
     return settings;
   };
-  return { startApp, dispose, send, count, window, document, origin };
+  const root = document.documentElement;
+  const openMenu = () => {
+    const host = root.children.at(-1);
+    const launcher = host.shadowRoot.children[1];
+    const [menu, button] = launcher.children;
+    menu.hidden = true;
+    button.dispatchEvent(new Event('click'));
+    return menu;
+  };
+  return { startApp, dispose, send, count, window, document, origin, features, openMenu };
 }
 
 test('приложение проверяет точный origin и не пересоздаёт модули при изменении адресов', () => {
@@ -124,6 +133,45 @@ test('pagehide освобождает приложение, но сохраня�
   assert.equal(f.count.unsubscribed, 0); assert.equal(f.count.stops.panel, 0);
   f.window.dispatchEvent(new Event('pagehide'));
   assert.equal(f.count.unsubscribed, 1); assert.equal(f.count.stops.panel, 1);
+});
+
+test('ошибка visible скрывает только повреждённое действие, остальные и настройки доступны', () => {
+  const f = fixture();
+  let runs = 0;
+  f.features[0].actions = [
+    { id: 'broken', title: 'Broken', mode: 'any', visible() { throw Error('broken visible'); }, run() {} },
+    { id: 'valid', title: 'Valid', mode: 'any', run() { runs++; } },
+  ];
+  try {
+    f.send();
+    const menu = f.openMenu();
+    assert.equal(menu.children.some((item) => item.textContent === 'Broken'), false);
+    assert.equal(menu.children.at(-1).textContent, 'Настройки…');
+    menu.children.find((item) => item.textContent === 'Valid').dispatchEvent(new Event('click'));
+    assert.equal(runs, 1);
+  } finally { f.dispose(); }
+});
+
+test('команда из открытого меню перепроверяет модуль, режим страницы и visible перед запуском', () => {
+  for (const change of ['disabled', 'editor-closed', 'hidden', 'host-removed', 'disposed']) {
+    const f = fixture();
+    let runs = 0;
+    f.features[0].actions = [{ id: 'edit', title: 'Edit', mode: 'editor',
+      visible: (values) => values.color !== 'hidden', run() { runs++; } }];
+    try {
+      const state = f.send();
+      const item = f.openMenu().children.find((node) => node.textContent === 'Edit');
+      if (change === 'disabled') { state.features.panel.enabled = false; f.send(state); }
+      if (change === 'editor-closed') f.window.tinymce.activeEditor = null;
+      if (change === 'hidden') { state.features.panel.values.color = 'hidden'; f.send(state); }
+      if (change === 'host-removed') f.send({ hosts: [] });
+      if (change === 'disposed') f.dispose();
+      const starts = f.count.starts.panel;
+      item.dispatchEvent(new Event('click'));
+      assert.equal(runs, 0, change);
+      assert.equal(f.count.starts.panel, starts, change);
+    } finally { f.dispose(); }
+  }
 });
 
 test('наблюдатель темы отключается явной функцией очистки', () => {

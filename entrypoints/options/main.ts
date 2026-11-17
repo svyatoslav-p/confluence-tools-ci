@@ -1,5 +1,5 @@
 // Страница настроек. Блоки модулей строятся из описаний Feature.settings.
-import { eventToHotkey, formatHotkey } from '../../core/hotkeys';
+import { eventToHotkey, findHotkeyConflict, formatHotkey } from '../../core/hotkeys';
 import { definitions } from '../../core/definitions';
 import { hostToPattern, normalizeHost } from '../../core/settings';
 import { loadSettings, saveSettings } from '../../core/storage';
@@ -118,11 +118,9 @@ function renderField(feature: FeatureDefinition, field: SettingField): HTMLEleme
       const hotkey = eventToHotkey(event);
       // Сочетание без Ctrl/Alt/Meta мешало бы обычному набору текста.
       if (!hotkey || !(event.ctrlKey || event.altKey || event.metaKey)) return;
-      const duplicate = feature.settings.find((other) =>
-        other.type === 'hotkey' && other.key !== field.key && values[other.key] === hotkey,
-      );
+      const duplicate = findHotkeyConflict(definitions, settings, feature, field, hotkey);
       if (duplicate) {
-        saveError.textContent = `Это сочетание уже задано: ${duplicate.label}`;
+        saveError.textContent = `Это сочетание уже задано: ${duplicate.feature.title} — ${duplicate.field.label}`;
         saveError.hidden = false;
         return;
       }
@@ -188,11 +186,13 @@ function renderFeatures() {
     const state = settings.features[feature.id];
     const box = el('div', 'feature');
 
-    const header = el('label', 'feature-header');
-    const toggle = el('input');
-    toggle.type = 'checkbox';
-    toggle.checked = state.enabled;
-    header.append(toggle, feature.title);
+    const header = el('div', 'feature-header');
+    const title = el('h3', 'feature-title', feature.title);
+    title.id = `${feature.id}-title`;
+    const switches = el('div', 'feature-switches');
+    switches.setAttribute('role', 'radiogroup');
+    switches.setAttribute('aria-labelledby', title.id);
+    header.append(title, switches);
 
     // Настройки без группы идут общей сеткой, с группой — отдельным блоком с заголовком.
     const fields = el('div', 'settings');
@@ -214,11 +214,22 @@ function renderFeatures() {
     }
     fields.classList.toggle('disabled', !state.enabled);
 
-    toggle.addEventListener('change', async () => {
-      state.enabled = toggle.checked;
-      fields.classList.toggle('disabled', !state.enabled);
-      await save();
-    });
+    for (const [enabled, text] of [[true, 'Включена'], [false, 'Выключена']] as const) {
+      const label = el('label');
+      const radio = el('input');
+      radio.type = 'radio';
+      radio.name = `${feature.id}-enabled`;
+      radio.value = String(enabled);
+      radio.checked = state.enabled === enabled;
+      radio.addEventListener('change', async () => {
+        if (!radio.checked) return;
+        state.enabled = enabled;
+        fields.classList.toggle('disabled', !enabled);
+        await save();
+      });
+      label.append(radio, text);
+      switches.append(label);
+    }
 
     box.append(header, el('p', 'hint', feature.description), fields);
     if (feature.settings.length) {

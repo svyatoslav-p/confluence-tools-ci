@@ -3,7 +3,7 @@
 import { onBridge, postBridge } from './bridge';
 import { features } from './registry';
 import { THEME_CSS, watchTheme } from './theme';
-import type { Feature, FeatureContext, NotifyKind, PageMode, Settings, TinyEditor } from './types';
+import type { Feature, FeatureContext, MenuAction, NotifyKind, PageMode, Settings, TinyEditor } from './types';
 
 const EDITOR_POLL_MS = 700;
 
@@ -151,7 +151,7 @@ export function startApp(): (() => void) | undefined {
   }
 
   function checkEditor() {
-    const found = findEditor();
+    const found = !disposed && settings?.hosts.includes(location.origin) ? findEditor() : null;
     if (found === editor) return false;
     teardownEditor();
     editor = found;
@@ -160,15 +160,25 @@ export function startApp(): (() => void) | undefined {
   }
 
   // --- Меню ---
+  function actionAvailable(feature: Feature, action: MenuAction): boolean {
+    const state = settings?.features[feature.id];
+    const mode: PageMode = editor ? 'editor' : 'view';
+    if (disposed || !settings?.hosts.includes(location.origin) || !state?.enabled) return false;
+    if (action.mode !== 'any' && action.mode !== mode) return false;
+    try {
+      return action.visible?.(state.values) ?? true;
+    } catch (error) {
+      console.error(`[Confluence Tools CI] Ошибка доступности «${feature.title}: ${action.title}»`, error);
+      return false;
+    }
+  }
+
   function renderMenu() {
     menu.replaceChildren();
-    const mode: PageMode = editor ? 'editor' : 'view';
+    checkEditor();
     let count = 0;
     for (const feature of enabledFeatures()) {
-      const values = settings!.features[feature.id].values;
-      const actions = (feature.actions ?? []).filter(
-        (a) => (a.mode === 'any' || a.mode === mode) && (a.visible?.(values) ?? true),
-      );
+      const actions = (feature.actions ?? []).filter((action) => actionAvailable(feature, action));
       if (!actions.length) continue;
       const title = document.createElement('div');
       title.className = 'menu-title';
@@ -178,7 +188,13 @@ export function startApp(): (() => void) | undefined {
         count++;
         menu.append(
           menuItem(action.title, async () => {
+            if (disposed) return;
             try {
+              checkEditor();
+              if (!actionAvailable(feature, action)) {
+                notify('Это действие сейчас недоступно. Откройте меню заново.');
+                return;
+              }
               await action.run(contextFor(feature));
             } catch (error) {
               console.error(`[Confluence Tools CI] ${action.title}`, error);

@@ -1,6 +1,8 @@
 // Панель быстрого форматирования: появляется над выделенным текстом в редакторе,
 // пока зажат Ctrl. Те же действия доступны по горячим клавишам.
 import definition from './definition';
+import { convertIdentifier, selectedIdentifier } from './identifier';
+import { toggleTextCase } from './text-selection';
 import { eventToHotkey, formatHotkey } from '../../core/hotkeys';
 import type { Feature, FeatureContext, TinyEditor } from '../../core/types';
 
@@ -124,17 +126,25 @@ function redStrike(editor: TinyEditor, values: Values) {
 
 const STYLE = `
   .st-toolbar {
-    position: fixed; display: none; gap: 4px; padding: 4px;
+    position: fixed; display: none; gap: 2px; padding: 3px;
     background: var(--ct-bg); border: 1px solid var(--ct-border); border-radius: 6px;
     box-shadow: 0 2px 8px var(--ct-shadow);
-    font: 600 14px/1 Arial, sans-serif;
+    font: 600 13px/1 Arial, sans-serif;
   }
   .st-toolbar button {
-    width: 30px; height: 30px; padding: 0; cursor: pointer;
+    width: 26px; height: 26px; padding: 0; cursor: pointer;
     background: none; border: 1px solid transparent; border-radius: 4px;
     font: inherit; color: var(--ct-text);
   }
   .st-toolbar button:hover { background: var(--ct-bg-hover); border-color: var(--ct-border); }
+  .st-more { position: relative; }
+  .st-more-list {
+    position: absolute; z-index: 1; width: max-content; max-width: calc(100vw - 8px);
+    box-sizing: border-box; padding: 4px; background: var(--ct-bg);
+    border: 1px solid var(--ct-border); border-radius: 6px; box-shadow: 0 2px 8px var(--ct-shadow);
+  }
+  .st-more-list button { display: block; width: 100%; height: auto; min-height: 26px; padding: 4px 7px; text-align: left; font-size: 12px; font-weight: 500; }
+  .st-more-list button:disabled { opacity: .55; cursor: default; }
 `;
 
 function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
@@ -160,7 +170,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   toolbar.setAttribute('role', 'toolbar');
   toolbar.setAttribute('aria-label', 'Быстрое форматирование');
 
-  function addButton(label: HTMLElement, title: string, hotkey: string, action: () => void) {
+  function makeButton(label: HTMLElement, title: string, hotkey: string, click: () => void) {
     const button = document.createElement('button');
     button.type = 'button';
     button.append(label);
@@ -170,8 +180,8 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     button.addEventListener('mousedown', (event) => {
       event.preventDefault();
     });
-    button.addEventListener('click', () => { run(action); });
-    toolbar.append(button);
+    button.addEventListener('click', click);
+    return button;
   }
 
   function label(text: string, color?: string) {
@@ -186,11 +196,67 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     { text: 'A↺', title: 'Стиль по умолчанию', visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
     { text: '−', title: 'Удалено', visible: values.showRed, color: values.redColor, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
     { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paint(editor, values.greenColor) },
-    { text: '◷', title: 'Устарело', visible: values.showYellow, color: values.yellowColor, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
+    { text: '', title: 'Устарело', more: true, visible: values.showYellow, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
+    { text: '', title: 'Camel/Snake', more: true, visible: values.showCase, hotkey: values.hotkeyCase,
+      available: () => Boolean(selectedIdentifier(editor)), run: () => convertIdentifier(editor) },
+    { text: '', title: 'Upper/Lower', more: true, visible: values.showTextCase, hotkey: values.hotkeyTextCase,
+      run: () => toggleTextCase(editor) },
   ];
+  type Action = (typeof actions)[number];
+  const more = document.createElement('div');
+  more.className = 'st-more';
+  const list = document.createElement('div');
+  list.className = 'st-more-list';
+  list.hidden = true;
+  const trigger = makeButton(label('…'), 'Ещё', '', openMore);
+  trigger.setAttribute('aria-expanded', 'false');
+  const refreshItems: (() => void)[] = [];
   for (const action of actions) {
     if (action.visible === 'false') continue;
-    addButton(label(action.text, action.color && editorColor(action.color)), action.title, action.hotkey, action.run);
+    const icon = label(action.text, action.color && editorColor(action.color));
+    const button = makeButton(icon, action.title, action.hotkey, () => run(action));
+    if (action.more) {
+      button.append(document.createTextNode((action.text ? ' ' : '') + action.title));
+      list.append(button);
+    } else toolbar.append(button);
+    if (action.available) {
+      const title = button.title;
+      refreshItems.push(() => {
+        button.disabled = !action.available();
+        button.title = button.disabled ? 'Выделите одно целое имя в camelCase или snake_case с единым оформлением.' : title;
+      });
+    }
+  }
+  function openMore() {
+    for (const refresh of refreshItems) refresh();
+    list.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    positionMore();
+  }
+  function positionMore() {
+    const anchor = more.getBoundingClientRect();
+    const size = list.getBoundingClientRect();
+    const desiredLeft = window.innerWidth - anchor.right >= size.width + 4
+      ? anchor.right : anchor.left - size.width;
+    const left = Math.max(4, Math.min(desiredLeft, window.innerWidth - size.width - 4));
+    list.style.left = (left - anchor.left) + 'px';
+    const top = Math.max(4, Math.min(anchor.top, window.innerHeight - size.height - 4));
+    list.style.top = (top - anchor.top) + 'px';
+  }
+  function closeMore() {
+    list.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  }
+  if (list.childElementCount) {
+    more.append(trigger, list);
+    toolbar.append(more);
+    trigger.addEventListener('mouseenter', openMore);
+    more.addEventListener('mouseleave', closeMore);
+    for (const doc of [document, editorDoc]) {
+      doc.addEventListener('mousedown', (event) => {
+        if (!list.hidden && !event.composedPath().includes(more)) closeMore();
+      }, events);
+    }
   }
 
   // Режим «без Ctrl»: показываем панель после завершения выделения.
@@ -198,10 +264,14 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   let ctrlAlone = false;
   let selecting = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
+  let dismissedSelection: Range | undefined;
 
-  function run(action: () => void) {
-    if (editor.selection.isCollapsed()) return;
-    try { action(); } catch (error) {
+  function run(action: Action) {
+    if (editor.selection.isCollapsed() || (action.available && !action.available())) return;
+    try {
+      action.run();
+      dismissedSelection = editor.selection.getRng().cloneRange();
+    } catch (error) {
       console.error('[Confluence Tools CI] Ошибка форматирования', error);
       ctx.notify('Не удалось изменить форматирование.', 'error');
     }
@@ -209,6 +279,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   function hide() {
+    closeMore();
     clearTimeout(timer);
     toolbar.style.display = 'none';
   }
@@ -243,7 +314,13 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
 
   function show() {
     if (!toolbar.childElementCount) return hide();
+    const range = editor.selection.getRng();
+    if (dismissedSelection && range.startContainer === dismissedSelection.startContainer &&
+      range.startOffset === dismissedSelection.startOffset && range.endContainer === dismissedSelection.endContainer &&
+      range.endOffset === dismissedSelection.endOffset) return hide();
+    dismissedSelection = undefined;
     if (selecting || !editorDoc.hasFocus() || (!always && !ctrlAlone) || editor.selection.isCollapsed()) return hide();
+    if (!list.hidden) for (const refresh of refreshItems) refresh();
     const end = selectionEnd();
     const frame = editor.iframeElement?.getBoundingClientRect();
     const frameLeft = frame?.left ?? 0;
@@ -267,10 +344,11 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     const left = Math.max(4, Math.min(frameLeft + end.x - width / 2, window.innerWidth - width - 4));
     toolbar.style.left = `${Math.round(left)}px`;
     toolbar.style.top = `${Math.round(top)}px`;
+    if (!list.hidden) positionMore();
   }
 
   // --- Клавиатура ---
-  const hotkeys = new Map(actions.filter((action) => action.hotkey).map((action) => [action.hotkey, action.run]));
+  const hotkeys = new Map(actions.filter((action) => action.hotkey).map((action) => [action.hotkey, action]));
 
   function schedule() {
     clearTimeout(timer);
@@ -278,9 +356,14 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   function onKeyDown(event: KeyboardEvent) {
+    if (event.key === 'Escape' && !list.hidden) {
+      closeMore();
+      return;
+    }
     if (always) return;
     if (event.key === 'Control') {
       if (event.repeat) return;
+      dismissedSelection = undefined;
       ctrlAlone = true;
       schedule();
       return;
@@ -301,7 +384,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     if (event.isComposing || editor.selection.isCollapsed()) return;
     const hotkey = eventToHotkey(event);
     const action = hotkey && hotkeys.get(hotkey);
-    if (!action) return;
+    if (!action || (action.available && !action.available())) return;
     event.preventDefault();
     event.stopPropagation();
     run(action);
@@ -312,6 +395,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     doc.addEventListener('keyup', onKeyUp, events);
   }
   editorDoc.addEventListener('keydown', onEditorHotkey, events);
+  editorDoc.addEventListener('mousedown', () => { dismissedSelection = undefined; }, events);
   if (always) {
     // Пока тянут мышью, панель не показываем — только когда кнопку отпустили.
     editorDoc.addEventListener('mousedown', (event) => {
@@ -328,6 +412,10 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     }
     // Выделение с клавиатуры (Shift+стрелки) и двойным щелчком.
     editorDoc.addEventListener('selectionchange', () => {
+      if (!list.hidden && !editor.selection.isCollapsed()) {
+        for (const refresh of refreshItems) refresh();
+        return;
+      }
       if (!selecting) schedule();
     }, events);
   }

@@ -10,6 +10,7 @@ export interface TinyEditor {
   execCommand(command: string, ui?: boolean, value?: unknown): boolean;
   selection: {
     getRng(): Range;
+    setRng(range: Range): void;
     getSel(): Selection | null;
     isCollapsed(): boolean;
   };
@@ -43,6 +44,8 @@ export interface SettingField {
   group?: string;
   /** Ключ настройки-флажка: пока он выключен, эта настройка показана неактивной. */
   enabledBy?: string;
+  /** Контекст горячей клавиши. Без ограничения считается доступной на всех страницах. */
+  hotkeyMode?: PageMode | 'any';
 }
 
 export type PageMode = 'view' | 'editor';
