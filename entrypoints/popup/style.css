@@ -29,3 +29,7 @@ main.popup { padding: 16px; margin: 0; }
 .popup fieldset:disabled #module-list { opacity: .6; }
 #open-options { width: 100%; }
 .popup .error { margin: 0 0 12px; font-size: 13px; }
+.popup .update-available { margin: 0 0 16px; padding: 10px 12px; font-size: 14px; }
+.popup .update-available p { margin: 0; }
+.popup .update-available a { color: inherit; font-weight: normal; margin-top: 6px; }
+.popup .update-available a:not([hidden]) { display: inline-block; }

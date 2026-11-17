@@ -4,7 +4,23 @@ import { loadTs } from './load-ts.mjs';
 
 const source = 'https://raw.githubusercontent.com/svyatoslav-p/confluence-tools-ci/refs/heads/main/package.json';
 const downloadUrl = 'https://github.com/svyatoslav-p/confluence-tools-ci/actions';
-const { parseUpdateSource, storedUpdateSource, readPackageVersion, compareVersions } = loadTs('core/update-source.ts');
+const { parseUpdateSource, storedUpdateSource, readPackageVersion, compareVersions, availableUpdate } = loadTs('core/update-source.ts');
+
+test('popup показывает найденную новую версию только для текущей сборки и источника', () => {
+  const state = { source, installedVersion: '0.1.2', version: '0.1.3', available: true, downloadUrl };
+  const stored = { updateManifestUrl: source, updateCheckState: state };
+  assert.equal(availableUpdate(stored, '0.1.2').version, '0.1.3');
+  assert.equal(availableUpdate(stored, '0.1.2').downloadUrl, downloadUrl);
+  assert.equal(availableUpdate(stored, '0.1.3'), null);
+  assert.equal(availableUpdate({ ...stored, updateManifestUrl: '' }, '0.1.2'), null);
+  assert.equal(availableUpdate({ ...stored, updateManifestUrl: 'https://example.org/package.json' }, '0.1.2'), null);
+  for (const value of [{ available: false }, { version: '0.1.2' }, { version: '0.1.1' }, { version: 'bad' }]) {
+    assert.equal(availableUpdate({ ...stored, updateCheckState: { ...state, ...value } }, '0.1.2'), null);
+  }
+  const cached = { ...stored, updateCheckState: { ...state, checking: true, error: 'offline', downloadUrl: 'javascript:alert(1)' } };
+  assert.equal(availableUpdate(cached, '0.1.2').version, '0.1.3');
+  assert.equal(availableUpdate(cached, '0.1.2').downloadUrl, '');
+});
 
 function fixture() {
   const data = { updateManifestUrl: source };

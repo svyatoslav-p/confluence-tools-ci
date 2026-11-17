@@ -9,6 +9,10 @@
   <body>
     <main class="popup">
       <header><img src="/icon/32.png" width="28" height="28" alt="" /><h1>Confluence Tools CI</h1><span id="version" class="hint"></span></header>
+      <aside id="update-available" class="update-available" role="status" hidden>
+        <p id="update-version"></p>
+        <a id="update-download" target="_blank" rel="noopener noreferrer" hidden>Открыть сборки</a>
+      </aside>
       <label class="toggle overall"><span>Расширение работает</span><input id="enabled" type="checkbox" role="switch" disabled /></label>
       <p id="status" class="hint" role="status">Загрузка…</p>
       <fieldset id="modules" disabled>

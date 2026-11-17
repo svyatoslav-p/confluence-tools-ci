@@ -51,3 +51,12 @@ export function compareVersions(left: string, right: string): number {
   }
   return 0;
 }
+
+/** Последний найденный выпуск применим только к текущему источнику и установленной версии. */
+export function availableUpdate(stored: Record<string, unknown>, installedVersion: string): { version: string; downloadUrl: string } | null {
+  const source = storedUpdateSource(stored), state = stored[UPDATE_STATE_KEY];
+  if (!source || !isRecord(state) || state.source !== source || state.installedVersion !== installedVersion || state.available !== true) return null;
+  const version = readPackageVersion(state);
+  if (!version || compareVersions(version, installedVersion) <= 0) return null;
+  return { version, downloadUrl: parseUpdateSource(state.downloadUrl)?.url ?? '' };
+}
