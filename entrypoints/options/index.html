@@ -29,6 +29,18 @@
         <div id="features"></div>
       </section>
 
+      <section>
+        <h2>Уведомления об обновлениях</h2>
+        <p class="hint">При запуске браузера проверяется ветка main публичного репозитория GitHub.
+          Нажатие на уведомление открывает сборки для ручного обновления. Пустой адрес отключает проверку.</p>
+        <label for="update-repository">Источник обновлений</label>
+        <form id="update-form" class="row">
+          <input id="update-repository" type="text" placeholder="https://github.com/svyatoslav-p/confluence-tools-ci" autocomplete="off" />
+          <button type="submit">Сохранить</button>
+        </form>
+        <p id="update-feedback" role="status" hidden></p>
+      </section>
+
       <p class="hint">Изменения сохраняются сразу. Открытые страницы Confluence подхватывают их без перезагрузки; после добавления адреса страницу нужно обновить.</p>
     </main>
     <script type="module" src="./main.ts"></script>

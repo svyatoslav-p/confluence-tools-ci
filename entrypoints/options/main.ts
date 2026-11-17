@@ -3,6 +3,7 @@ import { eventToHotkey, findHotkeyConflict, formatHotkey } from '../../core/hotk
 import { definitions } from '../../core/definitions';
 import { hostToPattern, normalizeHost } from '../../core/settings';
 import { loadSettings, saveSettings } from '../../core/storage';
+import { parseUpdateRepository, UPDATE_REPOSITORY_KEY } from '../../core/update-source';
 import type { FeatureDefinition, SettingField, Settings } from '../../core/types';
 
 const hostsList = document.querySelector<HTMLUListElement>('#hosts')!;
@@ -10,6 +11,9 @@ const hostForm = document.querySelector<HTMLFormElement>('#host-form')!;
 const hostInput = document.querySelector<HTMLInputElement>('#host-input')!;
 const hostError = document.querySelector<HTMLElement>('#host-error')!;
 const featuresBox = document.querySelector<HTMLElement>('#features')!;
+const updateForm = document.querySelector<HTMLFormElement>('#update-form')!;
+const updateRepository = document.querySelector<HTMLInputElement>('#update-repository')!;
+const updateFeedback = document.querySelector<HTMLElement>('#update-feedback')!;
 
 let settings: Settings;
 let hostsRender = 0;
@@ -95,6 +99,32 @@ hostForm.addEventListener('submit', async (event) => {
 });
 
 // --- Модули ---
+
+updateForm.addEventListener('submit', async (event) => {
+  event.preventDefault();
+  const input = updateRepository.value.trim();
+  const source = parseUpdateRepository(input);
+  updateFeedback.hidden = false;
+  updateFeedback.className = 'error';
+  if (input && !source) {
+    updateFeedback.textContent = 'Укажите адрес публичного репозитория https://github.com/владелец/репозиторий.';
+    return;
+  }
+  try {
+    // Запрашиваем доступ непосредственно по действию пользователя, до других await.
+    if (source && !await chrome.permissions.request({ origins: ['https://api.github.com/*'] })) {
+      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к GitHub API. Нажмите «Сохранить» и разрешите доступ.';
+      return;
+    }
+    await chrome.storage.local.set({ [UPDATE_REPOSITORY_KEY]: source?.url ?? '' });
+    updateRepository.value = source?.url ?? '';
+    updateFeedback.className = 'hint';
+    updateFeedback.textContent = source ? 'Источник сохранён. Проверка выполняется при запуске браузера и смене источника.' : 'Проверка обновлений отключена.';
+  } catch (error) {
+    updateFeedback.textContent = 'Не удалось сохранить источник обновлений. Повторите попытку.';
+    console.error('[Confluence Tools CI]', error);
+  }
+});
 
 function renderField(feature: FeatureDefinition, field: SettingField): HTMLElement[] {
   const values = settings.features[feature.id].values;
@@ -248,6 +278,8 @@ function renderFeatures() {
 
 async function init() {
   settings = await loadSettings();
+  const updates = await chrome.storage.local.get(UPDATE_REPOSITORY_KEY);
+  updateRepository.value = parseUpdateRepository(updates[UPDATE_REPOSITORY_KEY])?.url ?? '';
   renderFeatures();
   await renderHosts();
   chrome.permissions.onAdded.addListener(() => void renderHosts());
