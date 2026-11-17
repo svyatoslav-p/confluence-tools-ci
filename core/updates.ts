@@ -1,5 +1,5 @@
 import { isRecord } from './settings';
-import { parseUpdateSource, parseUpdateManifest, storedUpdateSource, validBuildDate,
+import { compareVersions, parseUpdateSource, readPackageVersion, storedUpdateSource,
   UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY as STATE_KEY } from './update-source';
 
 async function clearUpdateBadge() {
@@ -7,7 +7,7 @@ async function clearUpdateBadge() {
   await chrome.action.setTitle({ title: 'Confluence Tools CI — настройки' });
 }
 
-export async function checkForUpdates(builtAt: string): Promise<void> {
+export async function checkForUpdates(): Promise<void> {
   const stored = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
   const source = parseUpdateSource(storedUpdateSource(stored));
   if (!source) {
@@ -16,19 +16,21 @@ export async function checkForUpdates(builtAt: string): Promise<void> {
     return;
   }
   if (!await chrome.permissions.contains({ origins: [source.permission] })) {
-    throw new Error('Разрешите чтение update.json, нажав «Проверить обновление».');
+    throw new Error('Разрешите чтение package.json, нажав «Проверить обновление».');
   }
   const response = await fetch(source.url, {
     cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15000),
   });
-  if (!response.ok) throw new Error(`Не удалось прочитать update.json: HTTP ${response.status}`);
-  const manifest = parseUpdateManifest(await response.json());
-  if (!manifest) throw new Error('В update.json нужны version, builtAt в UTC и downloadUrl с HTTPS-ссылкой.');
-  if (!validBuildDate(builtAt)) throw new Error('В установленной сборке отсутствует корректная дата сборки.');
-  const available = Date.parse(manifest.builtAt) > Date.parse(builtAt);
+  if (!response.ok) throw new Error(`Не удалось прочитать package.json: HTTP ${response.status}`);
+  const metadata: unknown = await response.json();
+  const version = readPackageVersion(metadata);
+  if (!version) throw new Error('В package.json отсутствует корректная числовая версия version.');
+  const downloadUrl = isRecord(metadata) ? parseUpdateSource(metadata.downloadUrl)?.url ?? '' : '';
+  const installedVersion = chrome.runtime.getManifest().version;
+  const available = compareVersions(version, installedVersion) > 0;
   const current = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
   if (storedUpdateSource(current) !== source.url) return;
-  await chrome.storage.local.set({ [STATE_KEY]: { source: source.url, available, ...manifest,
+  await chrome.storage.local.set({ [STATE_KEY]: { source: source.url, available, version, installedVersion, downloadUrl,
     checking: false, error: '', checkedAt: Date.now() } });
   if (!available) return clearUpdateBadge();
   await chrome.action.setBadgeText({ text: '!' });
@@ -36,19 +38,21 @@ export async function checkForUpdates(builtAt: string): Promise<void> {
   await chrome.action.setTitle({ title: 'Confluence Tools CI — доступна новая версия' });
 }
 
-export function setupUpdateChecks(builtAt: string) {
+export function setupUpdateChecks() {
   let queue = Promise.resolve();
   const check = () => {
     queue = queue.then(async () => {
       const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, STATE_KEY]);
       const source = storedUpdateSource(stored);
-      const state = isRecord(stored[STATE_KEY]) && stored[STATE_KEY].source === source ? stored[STATE_KEY] : {};
-      if (source) await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, checking: true, error: '' } });
-      try { await checkForUpdates(builtAt); }
+      const installedVersion = chrome.runtime.getManifest().version;
+      const state = isRecord(stored[STATE_KEY]) && stored[STATE_KEY].source === source &&
+        stored[STATE_KEY].installedVersion === installedVersion ? stored[STATE_KEY] : {};
+      if (source) await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, installedVersion, checking: true, error: '' } });
+      try { await checkForUpdates(); }
       catch (error) {
         const current = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
         if (source && storedUpdateSource(current) === source) {
-          await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, checking: false,
+          await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, installedVersion, checking: false,
             error: error instanceof Error ? error.message : 'Не удалось проверить обновления.' } });
         }
         console.error('[Confluence Tools CI] Проверка обновлений не удалась', error);

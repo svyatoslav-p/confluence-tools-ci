@@ -3,6 +3,7 @@
   "description": "Модульное расширение Chrome с инструментами для Confluence Data Center",
   "private": true,
   "version": "0.1.0",
+  "downloadUrl": "https://github.com/svyatoslav-p/confluence-tools-ci/actions",
   "type": "module",
   "scripts": {
     "dev": "wxt",

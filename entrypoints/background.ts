@@ -4,8 +4,6 @@ import { hostToPattern, isRecord, STORAGE_KEY } from '../core/settings';
 import { loadHosts } from '../core/storage';
 import { setupUpdateChecks } from '../core/updates';
 
-declare const __BUILD_TIMESTAMP__: string;
-
 const BRIDGE_ID = 'confluence-ext-bridge';
 const APP_ID = 'confluence-ext-app';
 
@@ -31,7 +29,7 @@ async function syncContentScripts(): Promise<void> {
 }
 
 export default defineBackground(() => {
-  setupUpdateChecks(__BUILD_TIMESTAMP__);
+  setupUpdateChecks();
   let queue: Promise<void> = Promise.resolve();
   const sync = () => {
     queue = queue.then(syncContentScripts).catch((error) => console.error('[Confluence Tools CI]', error));

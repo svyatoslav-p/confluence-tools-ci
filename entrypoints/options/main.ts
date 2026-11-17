@@ -15,6 +15,8 @@ const updateForm = document.querySelector<HTMLFormElement>('#update-form')!;
 const updateSourceInput = document.querySelector<HTMLInputElement>('#update-repository')!;
 const updateFeedback = document.querySelector<HTMLElement>('#update-feedback')!;
 const updateStatus = document.querySelector<HTMLElement>('#update-status')!;
+const installedVersionLabel = document.querySelector<HTMLElement>('#installed-version')!;
+const updateError = document.querySelector<HTMLElement>('#update-error')!;
 const updateArtifact = document.querySelector<HTMLAnchorElement>('#update-artifact')!;
 const checkUpdatesButton = document.querySelector<HTMLButtonElement>('#check-updates')!;
 let savedUpdateSource = '';
@@ -112,28 +114,33 @@ async function renderUpdateStatus() {
   if (render !== updateRender) return;
   const source = parseUpdateSource(storedUpdateSource(stored));
   savedUpdateSource = source?.url ?? '';
+  const installedVersion = chrome.runtime.getManifest().version;
+  installedVersionLabel.textContent = installedVersion;
   const raw = stored[UPDATE_STATE_KEY];
-  const state = isRecord(raw) && raw.source === savedUpdateSource ? raw : {};
+  const state = isRecord(raw) && raw.source === savedUpdateSource && raw.installedVersion === installedVersion ? raw : {};
   const checking = state.checking === true;
-  checkUpdatesButton.disabled = manualUpdateCheck || !source;
-  checkUpdatesButton.textContent = manualUpdateCheck ? 'Проверяем…' : 'Проверить обновление';
+  checkUpdatesButton.disabled = manualUpdateCheck || checking || !source;
+  checkUpdatesButton.textContent = manualUpdateCheck || checking ? 'Проверяем…' : 'Проверить обновление';
   updateArtifact.hidden = true;
   updateArtifact.removeAttribute('href');
   updateStatus.className = 'hint';
+  updateError.hidden = true;
+  updateError.textContent = '';
   if (!source) { updateStatus.textContent = 'Проверка обновлений отключена.'; return; }
-  if (checking) { updateStatus.textContent = 'Проверяем обновления…'; return; }
   const available = state.available === true;
-  updateStatus.textContent = available ? 'Доступно обновление.' : state.checkedAt ? 'Новых обновлений не найдено.' : 'Обновления ещё не проверялись.';
+  updateStatus.className = available ? 'update-available' : 'hint';
+  updateStatus.textContent = available
+    ? `Доступна новая версия${typeof state.version === 'string' ? `: ${state.version}` : '.'}${checking ? ' Проверяем повторно…' : ''}`
+    : checking ? 'Проверяем обновления…' : state.checkedAt ? 'Новых обновлений не найдено.' : 'Обновления ещё не проверялись.';
   const download = parseUpdateSource(state.downloadUrl);
   if (available && download) {
     updateArtifact.href = download.url;
     updateArtifact.textContent = 'Открыть сборки';
     updateArtifact.hidden = false;
   }
-  if (available && typeof state.builtAt === 'string') updateStatus.textContent += ` Дата сборки: ${state.builtAt}`;
   if (typeof state.error === 'string' && state.error) {
-    updateStatus.className = 'error';
-    updateStatus.textContent = (available ? 'Ранее найдено обновление. ' : '') + state.error;
+    updateError.hidden = false;
+    updateError.textContent = state.error;
   }
 }
 
@@ -149,13 +156,12 @@ checkUpdatesButton.addEventListener('click', async () => {
   try {
     if (!await chrome.permissions.request({ origins: [source.permission] })) {
       updateStatus.className = 'error';
-      updateStatus.textContent = 'Для проверки обновлений нужен доступ к адресу update.json.';
+      updateStatus.textContent = 'Для проверки обновлений нужен доступ к адресу package.json.';
       return;
     }
     manualUpdateCheck = true;
     checkUpdatesButton.disabled = true;
     checkUpdatesButton.textContent = 'Проверяем…';
-    updateStatus.textContent = 'Проверяем обновления…';
     await chrome.runtime.sendMessage({ type: 'check-updates' });
     manualUpdateCheck = false;
     await renderUpdateStatus();
@@ -175,13 +181,13 @@ updateForm.addEventListener('submit', async (event) => {
   updateFeedback.hidden = false;
   updateFeedback.className = 'error';
   if (input && !source) {
-    updateFeedback.textContent = 'Укажите полный HTTPS-адрес файла update.json.';
+    updateFeedback.textContent = 'Укажите полный HTTPS-адрес файла package.json.';
     return;
   }
   try {
     // Запрашиваем доступ непосредственно по действию пользователя, до других await.
     if (source && !await chrome.permissions.request({ origins: [source.permission] })) {
-      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к адресу update.json. Нажмите «Сохранить» и разрешите доступ.';
+      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к адресу package.json. Нажмите «Сохранить» и разрешите доступ.';
       return;
     }
     await chrome.storage.local.set({ [UPDATE_SOURCE_KEY]: source?.url ?? '' });

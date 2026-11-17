@@ -31,15 +31,17 @@
 
       <section>
         <h2>Уведомления об обновлениях</h2>
-        <p class="hint">При запуске браузера сравнивается дата вашей сборки с датой в update.json.
+        <p class="hint">При запуске браузера версия расширения сравнивается с version в package.json.
           При доступном обновлении на значке появляется «!», а здесь — ссылка на сборки. Пустой адрес отключает проверку.</p>
-        <label for="update-repository">URL файла update.json</label>
+        <label for="update-repository">URL файла package.json</label>
         <form id="update-form" class="row">
-          <input id="update-repository" type="text" placeholder="https://raw.githubusercontent.com/svyatoslav-p/confluence-tools-ci/refs/heads/main/update.json" autocomplete="off" />
+          <input id="update-repository" type="text" placeholder="https://raw.githubusercontent.com/svyatoslav-p/confluence-tools-ci/refs/heads/main/package.json" autocomplete="off" />
           <button type="submit">Сохранить</button>
         </form>
         <p id="update-feedback" role="status" hidden></p>
+        <p>Текущая версия: <strong id="installed-version"></strong></p>
         <p id="update-status" role="status"></p>
+        <p id="update-error" class="error" role="status" hidden></p>
         <p><a id="update-artifact" target="_blank" rel="noopener noreferrer" hidden></a></p>
         <button id="check-updates" type="button">Проверить обновление</button>
       </section>
