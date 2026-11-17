@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Волшебная палочка с искрами на синем фоне Confluence: расширение упрощает работу и добавляет функции. -->
+  <rect width="128" height="128" rx="28" fill="#0052cc"/>
+  <g>
+    <path d="M30 98 L70 58" stroke="#ffffff" stroke-width="13" stroke-linecap="round" fill="none"/>
+    <path fill="#ffffff" d="M86 16 L93.28 34.72 L112 42 L93.28 49.28 L86 68 L78.72 49.28 L60 42 L78.72 34.72 Z"/>
+    <path fill="#ffffff" d="M46 23 L49.08 30.92 L57 34 L49.08 37.08 L46 45 L42.92 37.08 L35 34 L42.92 30.92 Z"/>
+    <path fill="#ffffff" d="M98 76 L101.36 84.64 L110 88 L101.36 91.36 L98 100 L94.64 91.36 L86 88 L94.64 84.64 Z"/>
+  </g>
+</svg>

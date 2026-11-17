@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="manifest.open_in_tab" content="true" />
+    <title>Confluence Tools CI — настройки</title>
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Confluence Tools CI</h1>
+
+      <section>
+        <h2>Адреса Confluence</h2>
+        <p class="hint">
+          Расширение работает только на перечисленных адресах. Для каждого адреса Chrome один раз попросит разрешение.
+        </p>
+        <ul id="hosts" class="hosts"></ul>
+        <form id="host-form" class="row">
+          <input id="host-input" type="text" placeholder="https://confluence.example.com" autocomplete="off" />
+          <button type="submit">Добавить</button>
+        </form>
+        <p id="host-error" class="error" hidden></p>
+      </section>
+
+      <section>
+        <h2>Модули</h2>
+        <div id="features"></div>
+      </section>
+
+      <p class="hint">Изменения сохраняются сразу. Открытые страницы Confluence подхватывают их без перезагрузки; после добавления адреса страницу нужно обновить.</p>
+    </main>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>
