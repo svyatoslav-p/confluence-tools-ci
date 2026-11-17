@@ -14,6 +14,7 @@ export interface TinyEditor {
     isCollapsed(): boolean;
   };
   formatter: {
+    register(name: string, format: Record<string, unknown>): void;
     apply(name: string, vars?: Record<string, string>): void;
     remove(name: string, vars?: Record<string, string>): void;
   };

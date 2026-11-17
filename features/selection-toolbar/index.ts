@@ -93,6 +93,25 @@ function paint(editor: TinyEditor, color: string) {
   editor.nodeChanged();
 }
 
+/** Отдельный inline-формат не меняет цвет родительского абзаца или списка. */
+function defaultStyle(editor: TinyEditor) {
+  editor.undoManager.transact(() => {
+    editor.formatter.remove('strikethrough');
+    keepListItemStyles(editor, () => editor.formatter.apply('ci-default-text'));
+    for (const span of editor.getBody().querySelectorAll<HTMLElement>('[data-ci-default-text]')) {
+      // Ссылка может оказаться как внутри новой обёртки, так и снаружи неё.
+      if (span.closest('a[href]')) span.style.color = 'var(--ds-link, #0052CC)';
+      for (const link of span.querySelectorAll<HTMLElement>('a[href]')) {
+        link.style.color = 'var(--ds-link, #0052CC)';
+        setStyleAttr(link, link.getAttribute('style'));
+      }
+      span.removeAttribute('data-ci-default-text');
+      setStyleAttr(span, span.getAttribute('style'));
+    }
+  });
+  editor.nodeChanged();
+}
+
 function redStrike(editor: TinyEditor, values: Values) {
   editor.undoManager.transact(() => {
     keepListItemStyles(editor, () => {
@@ -123,6 +142,14 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   const editorDoc = editor.getDoc();
   const controller = new AbortController();
   const events = { capture: true, signal: controller.signal };
+  editor.formatter.register('ci-default-text', {
+    inline: 'span',
+    styles: { color: 'var(--ds-text, #172B4D)' },
+    attributes: { 'data-ci-default-text': 'true' },
+    clear_child_styles: true,
+    remove_similar: true,
+    links: false,
+  });
 
   // --- Панель ---
   const style = document.createElement('style');
@@ -147,22 +174,23 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     toolbar.append(button);
   }
 
-  function label(text: string, color?: string, strike = false) {
+  function label(text: string, color?: string) {
     const span = document.createElement('span');
     span.textContent = text;
     if (color) span.style.color = color;
-    if (strike) span.style.textDecoration = 'line-through';
     return span;
   }
 
   const actions = [
-    { text: 'Tx', title: 'Очистить стиль', hotkey: values.hotkeyClean, run: () => clean(editor) },
-    { text: 'A', title: 'Красный зачёркнутый', color: values.redColor, strike: true, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
-    { text: 'A', title: 'Зелёный', color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paint(editor, values.greenColor) },
-    { text: 'A', title: 'Жёлтый', color: values.yellowColor, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
+    { text: 'Tx', title: 'Очистить стиль', visible: values.showClean, hotkey: values.hotkeyClean, run: () => clean(editor) },
+    { text: 'A↺', title: 'Стиль по умолчанию', visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
+    { text: '−', title: 'Удалено', visible: values.showRed, color: values.redColor, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
+    { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paint(editor, values.greenColor) },
+    { text: '◷', title: 'Устарело', visible: values.showYellow, color: values.yellowColor, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
   ];
   for (const action of actions) {
-    addButton(label(action.text, action.color && editorColor(action.color), action.strike), action.title, action.hotkey, action.run);
+    if (action.visible === 'false') continue;
+    addButton(label(action.text, action.color && editorColor(action.color)), action.title, action.hotkey, action.run);
   }
 
   // Режим «без Ctrl»: показываем панель после завершения выделения.
@@ -214,6 +242,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   function show() {
+    if (!toolbar.childElementCount) return hide();
     if (selecting || !editorDoc.hasFocus() || (!always && !ctrlAlone) || editor.selection.isCollapsed()) return hide();
     const end = selectionEnd();
     const frame = editor.iframeElement?.getBoundingClientRect();

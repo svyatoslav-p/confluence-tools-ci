@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
 class Element extends EventTarget {
+  get childElementCount() { return this.children.length; }
   constructor(name) { super(); this.nodeName = name.toUpperCase(); this.nodeType = 1; this.style = {}; this.children = []; this.attributes = new Map(); this.offsetWidth = 142; this.offsetHeight = 40; }
   append(...nodes) { for (const node of nodes) { this.children.push(node); node.parentElement = this; } }
   remove() { if (this.parentElement) this.parentElement.children = this.parentElement.children.filter((node) => node !== this); }
@@ -26,7 +27,7 @@ function input(target, type, fields = {}) {
 }
 const pause = () => new Promise((resolve) => setTimeout(resolve, 240));
 
-function fixture(always = true) {
+function fixture(always = true, overrides = {}) {
   const window = new EventTarget(); window.innerWidth = 900; window.innerHeight = 700;
   const document = new Document();
   const editorDoc = new Document();
@@ -43,12 +44,13 @@ function fixture(always = true) {
   const editor = { selection, getDoc: () => editorDoc, getBody: () => body, nodeChanged() {},
     iframeElement: { getBoundingClientRect: () => ({ left: 0, top: 100, bottom: 650 }) },
     undoManager: { transact: (callback) => callback() },
-    formatter: { apply: (...args) => calls.push(args) }, execCommand: (...args) => calls.push(args) };
+    formatter: { register() {}, remove: (...args) => calls.push(['remove', ...args]), apply: (...args) => calls.push(args) }, execCommand: (...args) => calls.push(args) };
   const { default: feature } = loadTs('features/selection-toolbar/index.ts', { globals: {
     window, document, Node: { ELEMENT_NODE: 1, DOCUMENT_POSITION_FOLLOWING: 4 },
   } });
   const values = Object.fromEntries(feature.settings.map((field) => [field.key, field.default]));
   values.showWithoutCtrl = String(always);
+  Object.assign(values, overrides);
   const cleanup = feature.setupEditor({ editor, values, root, notify: (message) => calls.push(message) });
   const toolbar = root.children[1];
   return { editorDoc, document, root, window, editor, toolbar, calls, selection, cleanup, body, range };
@@ -66,6 +68,7 @@ test('панель ждёт mouseup, появляется у конца выде
     assert.equal(f.toolbar.style.display, 'flex');
     assert.equal(f.toolbar.style.top, '328px');
     assert.equal(f.toolbar.children.length, 4);
+    assert.equal(f.toolbar.children.some((button) => button.getAttribute('aria-label') === 'Очистить стиль'), false);
     f.cleanup();
     input(f.editorDoc, 'selectionchange'); await pause();
     assert.equal(f.root.children.length, 0);
@@ -126,5 +129,47 @@ test('обход списков ограничен областью выделе
     input(f.editorDoc, 'keydown', { code: 'KeyX', altKey: true });
     assert.equal(li.getAttribute('style'), null);
     assert.equal(li.getAttribute('data-mce-style'), null);
+  } finally { f.cleanup(); }
+});
+
+test('стандартный стиль снимает зачёркивание, возвращает цвет ссылок и удаляет служебные метки', () => {
+  const f = fixture();
+  try {
+    const span = new Element('span');
+    span.setAttribute('data-ci-default-text', 'true');
+    span.setAttribute('style', 'color: var(--ds-text, #172B4D);');
+    const link = new Element('a');
+    link.setAttribute('href', 'https://example.com');
+    link.getAttribute = (name) => name === 'style' ? `color: ${link.style.color};` : link.attributes.get(name) ?? null;
+    span.querySelectorAll = () => [link];
+    f.body.querySelectorAll = () => [span];
+    input(f.toolbar.children.find((button) => button.getAttribute('aria-label') === 'Стиль по умолчанию'), 'click');
+    assert.deepEqual(f.calls.map((args) => args[0]), ['remove', 'ci-default-text']);
+    assert.equal(f.calls[0][1], 'strikethrough');
+    assert.equal(link.style.color, 'var(--ds-link, #0052CC)');
+    assert.equal(link.getAttribute('href'), 'https://example.com');
+    assert.equal(link.getAttribute('data-mce-style'), link.getAttribute('style'));
+    assert.equal(span.getAttribute('data-ci-default-text'), null);
+  } finally { f.cleanup(); }
+});
+
+test('скрытые кнопки сохраняют горячие клавиши, пустая панель не появляется', async () => {
+  const f = fixture(true, { showClean: 'false', showDefault: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false' });
+  try {
+    assert.equal(f.toolbar.children.length, 0);
+    input(f.editorDoc, 'selectionchange'); await pause();
+    assert.equal(f.toolbar.style.display, 'none');
+    const event = input(f.editorDoc, 'keydown', { code: 'KeyB', key: 'и', altKey: true });
+    assert.equal(event.defaultPrevented, true);
+    assert.deepEqual(f.calls.map((args) => args[0]), ['remove', 'ci-default-text']);
+  } finally { f.cleanup(); }
+});
+
+test('можно оставить только выбранные кнопки и переназначить стандартный стиль', () => {
+  const f = fixture(true, { showClean: 'false', showRed: 'false', showYellow: 'false', hotkeyDefault: 'Alt+KeyN' });
+  try {
+    assert.deepEqual(f.toolbar.children.map((button) => button.getAttribute('aria-label')), ['Стиль по умолчанию', 'Добавлено']);
+    assert.equal(input(f.editorDoc, 'keydown', { code: 'KeyB', altKey: true }).defaultPrevented, false);
+    assert.equal(input(f.editorDoc, 'keydown', { code: 'KeyN', altKey: true }).defaultPrevented, true);
   } finally { f.cleanup(); }
 });
