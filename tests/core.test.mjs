@@ -49,6 +49,20 @@ test('адреса нормализуются и не включают учёт�
   assert.equal(hostToPattern(result.hosts[1]), 'http://example.com/*');
 });
 
+test('без сохранённых адресов расширение не подставляет адрес тестового стенда', async () => {
+  let stored;
+  const { loadHosts, loadSettings } = loadTs('core/storage.ts', { globals: {
+    chrome: { storage: { local: { get: async () => stored } } },
+  }, imports: { './definitions': { definitions: [] } } });
+  for (stored of [{}, { settings: {} }, { settings: { hosts: 'https://example.com' } }]) {
+    assert.deepEqual([...(await loadHosts())], []);
+    assert.deepEqual([...(await loadSettings()).hosts], []);
+  }
+  stored = { settings: { hosts: ['https://example.com:8443/confluence'] } };
+  assert.deepEqual([...(await loadHosts())], ['https://example.com:8443']);
+  assert.deepEqual([...(await loadSettings()).hosts], ['https://example.com:8443']);
+});
+
 test('клавиши зависят от code и одинаковы для русской и английской раскладки', () => {
   for (const key of ['z', 'я']) assert.equal(eventToHotkey({ key, code: 'KeyZ', altKey: true }), 'Alt+KeyZ');
   assert.equal(eventToHotkey({ code: 'AltLeft', altKey: true }), null);

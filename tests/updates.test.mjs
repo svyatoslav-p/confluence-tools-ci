@@ -109,8 +109,13 @@ test('ссылка на сборки берётся из удалённого pa
 });
 
 test('отключённая проверка и отсутствие доступа не выполняют запрос', async () => {
-  const f = fixture(); f.setGranted(false);
-  await assert.rejects(f.checkForUpdates(), /package.json/);
+  const f = fixture(); await f.checkForUpdates();
+  f.requests.length = 0;
+  f.setGranted(false);
+  await f.checkForUpdates();
+  assert.equal(f.badge, '');
+  assert.equal(f.data.updateCheckState, undefined);
+  f.setGranted(true);
   f.data.updateManifestUrl = ''; await f.checkForUpdates();
   assert.equal(f.requests.length, 0);
 });

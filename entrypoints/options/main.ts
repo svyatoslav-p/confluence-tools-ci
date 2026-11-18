@@ -18,6 +18,9 @@ const updateStatus = document.querySelector<HTMLElement>('#update-status')!;
 const installedVersionLabel = document.querySelector<HTMLElement>('#installed-version')!;
 const updateError = document.querySelector<HTMLElement>('#update-error')!;
 const updateArtifact = document.querySelector<HTMLAnchorElement>('#update-artifact')!;
+const updateAccess = document.querySelector<HTMLElement>('#update-access')!;
+const updateHost = document.querySelector<HTMLElement>('#update-host')!;
+const grantUpdateAccess = document.querySelector<HTMLButtonElement>('#grant-update-access')!;
 const checkUpdatesButton = document.querySelector<HTMLButtonElement>('#check-updates')!;
 let savedUpdateSource = '';
 let updateRender = 0;
@@ -138,15 +141,18 @@ hostForm.addEventListener('submit', async (event) => {
 async function renderUpdateStatus() {
   const render = ++updateRender;
   const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY]);
-  if (render !== updateRender) return;
   const source = parseUpdateSource(storedUpdateSource(stored));
+  const hasAccess = !!source && await chrome.permissions.contains({ origins: [source.permission] });
+  if (render !== updateRender) return;
   savedUpdateSource = source?.url ?? '';
+  updateAccess.hidden = !source || hasAccess;
+  updateHost.textContent = source ? new URL(source.url).host : '';
   const installedVersion = chrome.runtime.getManifest().version;
   installedVersionLabel.textContent = installedVersion;
   const raw = stored[UPDATE_STATE_KEY];
   const state = isRecord(raw) && raw.source === savedUpdateSource && raw.installedVersion === installedVersion ? raw : {};
   const checking = state.checking === true;
-  checkUpdatesButton.disabled = manualUpdateCheck || checking || !source;
+  checkUpdatesButton.disabled = manualUpdateCheck || checking || !hasAccess;
   checkUpdatesButton.textContent = manualUpdateCheck || checking ? 'Проверяем…' : 'Проверить обновление';
   updateArtifact.hidden = true;
   updateArtifact.removeAttribute('href');
@@ -154,6 +160,7 @@ async function renderUpdateStatus() {
   updateError.hidden = true;
   updateError.textContent = '';
   if (!source) { updateStatus.textContent = 'Проверка обновлений отключена.'; return; }
+  if (!hasAccess) { updateStatus.textContent = 'Проверка ожидает разрешения Chrome.'; return; }
   const available = state.available === true;
   updateStatus.className = available ? 'update-available' : 'hint';
   updateStatus.textContent = available
@@ -171,33 +178,60 @@ async function renderUpdateStatus() {
   }
 }
 
-checkUpdatesButton.addEventListener('click', async () => {
+function showUpdateFeedback(message: string, kind: 'hint' | 'error' = 'error') {
+  updateFeedback.className = kind;
+  updateFeedback.textContent = message;
+  updateFeedback.hidden = false;
+}
+
+function sourceForUpdateAction() {
   updateFeedback.hidden = true;
   const source = parseUpdateSource(updateSourceInput.value);
   if (!source || source.url !== savedUpdateSource) {
-    updateFeedback.hidden = false;
-    updateFeedback.className = 'error';
-    updateFeedback.textContent = 'Сначала сохраните изменённый источник обновлений.';
-    return;
+    showUpdateFeedback('Сначала сохраните изменённый источник обновлений.');
+    return null;
   }
+  return source;
+}
+
+async function checkNow() {
+  manualUpdateCheck = true;
+  checkUpdatesButton.disabled = true;
+  checkUpdatesButton.textContent = 'Проверяем…';
   try {
-    if (!await chrome.permissions.request({ origins: [source.permission] })) {
-      updateStatus.className = 'error';
-      updateStatus.textContent = 'Для проверки обновлений нужен доступ к адресу package.json.';
-      return;
-    }
-    manualUpdateCheck = true;
-    checkUpdatesButton.disabled = true;
-    checkUpdatesButton.textContent = 'Проверяем…';
     await chrome.runtime.sendMessage({ type: 'check-updates' });
+  } catch {
+    showUpdateFeedback('Не удалось выполнить проверку. Перезагрузите расширение и повторите попытку.');
+  } finally {
     manualUpdateCheck = false;
     await renderUpdateStatus();
+  }
+}
+
+checkUpdatesButton.addEventListener('click', () => {
+  if (sourceForUpdateAction()) void checkNow();
+});
+
+grantUpdateAccess.addEventListener('click', async () => {
+  const source = sourceForUpdateAction();
+  if (!source) return;
+  grantUpdateAccess.disabled = true;
+  try {
+    // Chrome принимает запрос разрешения непосредственно из обработчика нажатия.
+    const granted = await chrome.permissions.request({ origins: [source.permission] });
+    if (!granted) {
+      showUpdateFeedback('Доступ не выдан. Нажмите «Разрешить проверку обновлений», чтобы повторить запрос.');
+      return;
+    }
+    if (source.url === savedUpdateSource) {
+      showUpdateFeedback('Доступ выдан. Проверяем обновления…', 'hint');
+      await checkNow();
+      if (updateFeedback.className === 'hint') updateFeedback.hidden = true;
+    }
   } catch {
-    manualUpdateCheck = false;
-    checkUpdatesButton.disabled = false;
-    checkUpdatesButton.textContent = 'Проверить обновление';
-    updateStatus.className = 'error';
-    updateStatus.textContent = 'Не удалось выполнить проверку. Перезагрузите расширение и повторите попытку.';
+    showUpdateFeedback('Не удалось запросить разрешение Chrome. Повторите попытку.');
+  } finally {
+    grantUpdateAccess.disabled = false;
   }
 });
 
@@ -205,25 +239,18 @@ updateForm.addEventListener('submit', async (event) => {
   event.preventDefault();
   const input = updateSourceInput.value.trim();
   const source = parseUpdateSource(input);
-  updateFeedback.hidden = false;
-  updateFeedback.className = 'error';
   if (input && !source) {
-    updateFeedback.textContent = 'Укажите полный HTTPS-адрес файла package.json.';
+    showUpdateFeedback('Укажите полный HTTPS-адрес файла package.json.');
     return;
   }
   try {
-    // Запрашиваем доступ непосредственно по действию пользователя, до других await.
-    if (source && !await chrome.permissions.request({ origins: [source.permission] })) {
-      updateFeedback.textContent = 'Для проверки обновлений нужен доступ к адресу package.json. Нажмите «Сохранить» и разрешите доступ.';
-      return;
-    }
     await chrome.storage.local.set({ [UPDATE_SOURCE_KEY]: source?.url ?? '' });
     savedUpdateSource = source?.url ?? '';
     updateSourceInput.value = source?.url ?? '';
-    updateFeedback.className = 'hint';
-    updateFeedback.textContent = source ? 'Источник сохранён. Проверка выполняется при запуске браузера и смене источника.' : 'Проверка обновлений отключена.';
+    showUpdateFeedback(source ? 'Источник сохранён.' : 'Проверка обновлений отключена.', 'hint');
+    await renderUpdateStatus();
   } catch (error) {
-    updateFeedback.textContent = 'Не удалось сохранить источник обновлений. Повторите попытку.';
+    showUpdateFeedback('Не удалось сохранить источник обновлений. Повторите попытку.');
     console.error('[Confluence Tools CI]', error);
   }
 });
@@ -397,8 +424,12 @@ async function init() {
   await renderUpdateStatus();
   renderFeatures();
   await renderHosts();
-  chrome.permissions.onAdded.addListener(() => void renderHosts());
-  chrome.permissions.onRemoved.addListener(() => void renderHosts());
+  const refreshAccess = () => {
+    void renderHosts();
+    void renderUpdateStatus();
+  };
+  chrome.permissions.onAdded.addListener(refreshAccess);
+  chrome.permissions.onRemoved.addListener(refreshAccess);
 }
 
 void init();

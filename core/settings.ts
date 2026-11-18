@@ -2,7 +2,6 @@ import { isHotkey } from './hotkeys';
 import type { FeatureDefinition, SettingField, Settings } from './types';
 
 export const STORAGE_KEY = 'settings';
-export const DEFAULT_HOSTS = ['http://confluence.ideveloplab.ru:8095'];
 
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -37,7 +36,7 @@ export function normalizeSettings(raw: unknown, features: FeatureDefinition[]): 
 
 /** Общий разбор списка адресов, не требующий каталога модулей. */
 export function normalizeHosts(raw: unknown): string[] {
-  if (!Array.isArray(raw)) return [...DEFAULT_HOSTS];
+  if (!Array.isArray(raw)) return [];
   return [...new Set(raw.flatMap((host: unknown) => {
     const normalized = typeof host === 'string' ? normalizeHost(host) : null;
     return normalized ? [normalized] : [];

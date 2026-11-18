@@ -10,13 +10,10 @@ async function clearUpdateBadge() {
 export async function checkForUpdates(): Promise<void> {
   const stored = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
   const source = parseUpdateSource(storedUpdateSource(stored));
-  if (!source) {
+  if (!source || !await chrome.permissions.contains({ origins: [source.permission] })) {
     await clearUpdateBadge();
     await chrome.storage.local.remove(STATE_KEY);
     return;
-  }
-  if (!await chrome.permissions.contains({ origins: [source.permission] })) {
-    throw new Error('Разрешите чтение package.json, нажав «Проверить обновление».');
   }
   const response = await fetch(source.url, {
     cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15000),

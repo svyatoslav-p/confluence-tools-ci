@@ -45,11 +45,15 @@
           <button type="submit">Сохранить</button>
         </form>
         <p id="update-feedback" role="status" hidden></p>
+        <div id="update-access" hidden>
+          <p>Для проверки обновлений разрешите доступ к <strong id="update-host"></strong>. Расширение читает с этого сайта <code>package.json</code>, чтобы узнать номер доступной версии.</p>
+          <button id="grant-update-access" type="button" class="primary">Разрешить проверку обновлений</button>
+        </div>
         <p>Текущая версия: <strong id="installed-version"></strong></p>
         <p id="update-status" role="status"></p>
         <p id="update-error" class="error" role="status" hidden></p>
         <p><a id="update-artifact" target="_blank" rel="noopener noreferrer" hidden></a></p>
-        <button id="check-updates" type="button">Проверить обновление</button>
+        <button id="check-updates" type="button" disabled>Проверить обновление</button>
       </section>
 
       <p class="hint">Изменения сохраняются сразу. Открытые страницы Confluence подхватывают их без перезагрузки; после добавления адреса страницу нужно обновить.</p>
