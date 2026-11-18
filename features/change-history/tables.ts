@@ -40,6 +40,33 @@ function rowVersion(row: Element): string {
     .find((title) => versionParts(title)) ?? label;
 }
 
+function findPageLink(cell: Element, page: ChildPage) {
+  for (const target of cell.getElementsByTagName('ri:page')) {
+    const link = target.parentElement;
+    if (link?.tagName !== 'ac:link') continue;
+    const id = target.getAttribute('ri:content-id');
+    const title = target.getAttribute('ri:content-title');
+    const space = target.getAttribute('ri:space-key');
+    if (id ? id === page.id : title === page.title && (!space || space === page.space.key)) {
+      return { link, staleTarget: Boolean(title && title !== page.title) || Boolean(space && space !== page.space.key) };
+    }
+  }
+  for (const link of cell.getElementsByTagName('a')) {
+    const href = link.getAttribute('href');
+    if (!href || !URL.canParse(href, location.href)) continue;
+    const url = new URL(href, location.href);
+    if (url.origin === location.origin && (url.searchParams.get('pageId') === page.id || new RegExp(`/pages/${page.id}(?:/|$)`).test(url.pathname))) {
+      return { link, staleTarget: false };
+    }
+  }
+  return null;
+}
+
+function pageLinkMarkup(page: ChildPage, label: string) {
+  const escapedLabel = label.replace(/\]\]>/g, ']]]]><![CDATA[>');
+  return `<ac:link><ri:page ri:content-title="${escapeXml(page.title)}" ri:space-key="${escapeXml(page.space.key)}" /><ac:plain-text-link-body><![CDATA[${escapedLabel}]]></ac:plain-text-link-body></ac:link>`;
+}
+
 export function updateHistory(parent: string, child: string, page: ChildPage, values: Record<string, string> = {}): { content: string; updated: boolean; changed: boolean } {
   const options = historyTableOptions(values);
   const from = parseStorage(child), to = parseStorage(parent);
@@ -50,37 +77,35 @@ export function updateHistory(parent: string, child: string, page: ChildPage, va
   const targetTable = findTable(to.doc, options.heading, options.headers);
   const targetRows = rows(targetTable);
   cells(targetRows[0], 5);
-  const matches = targetRows.slice(1).filter((row) => {
-    const last = cells(row, 5)[4];
-    return [...last.getElementsByTagName('ri:page')].some((link) =>
-      link.getAttribute('ri:content-id') === page.id || (link.getAttribute('ri:content-title') === page.title &&
-        (!link.hasAttribute('ri:space-key') || link.getAttribute('ri:space-key') === page.space.key))) ||
-      [...last.getElementsByTagName('a')].some((link) => {
-        const url = new URL(link.getAttribute('href') ?? '', location.href);
-        return url.origin === location.origin && (url.searchParams.get('pageId') === page.id || new RegExp(`/pages/${page.id}(?:/|$)`).test(url.pathname));
-      });
+  const dataRows = targetRows.slice(1);
+  const matches = dataRows.flatMap((row) => {
+    const match = findPageLink(cells(row, 5)[4], page);
+    return match ? [{ row, ...match }] : [];
   });
   if (matches.length > 1) throw new Error('В «Истории» несколько строк для этой страницы. Удалите дубликаты перед обновлением.');
   const existing = matches[0];
   const version = page.title.match(/^\[?v\d+(?:\.\d+)*\]?/i)?.[0] ?? page.title;
-  const link = existing ? to.raw(cells(existing, 5)[4]) : `<td><ac:link><ri:page ri:content-title="${escapeXml(page.title)}" ri:space-key="${escapeXml(page.space.key)}" /><ac:plain-text-link-body><![CDATA[${version.replace(/\]\]>/g, ']]]]><![CDATA[>')}]]></ac:plain-text-link-body></ac:link></td>`;
   const next = sourceCells.map(from.raw);
-  const dataRows = targetRows.slice(1);
   const body = dataRows[0]?.parentElement ?? [...targetTable.children].find((node) => node.tagName === 'tbody') ?? targetTable;
   if (!['table', 'tbody'].includes(body.tagName) || dataRows.some((row) => row.parentElement !== body)) {
     throw new Error('Строки «Истории» должны находиться в одной секции таблицы.');
   }
   const entries = dataRows.map((row) => {
     let html = to.raw(row);
-    if (row === existing) {
-      // Сохраняем тег строки, её атрибуты и пятую ячейку.
+    if (row === existing?.row) {
       const rowStart = to.spans.get(row)!.start;
+      // Исправляем ссылку внутри пятой ячейки, сохраняя саму ячейку и её оформление.
+      if (existing.staleTarget || text(existing.link) !== version) {
+        const link = to.spans.get(existing.link)!;
+        html = html.slice(0, link.start - rowStart) + pageLinkMarkup(page, version) + html.slice(link.end - rowStart);
+      }
       const first = to.spans.get(cells(row, 5)[0])!, last = to.spans.get(cells(row, 5)[3])!;
       html = html.slice(0, first.start - rowStart) + next.join('') + html.slice(last.end - rowStart);
+      return { html, version };
     }
     return { html, version: rowVersion(row) };
   });
-  if (!existing) entries.push({ html: `<tr>${next.join('')}${link}</tr>`, version: page.title });
+  if (!existing) entries.push({ html: `<tr>${next.join('')}<td>${pageLinkMarkup(page, version)}</td></tr>`, version });
   entries.sort((a, b) => compareHistoryVersions(a.version, b.version));
 
   // Переставляем исходные строки целиком: заголовок, атрибуты таблицы, промежутки
