@@ -1,44 +1,19 @@
 import { strFromU8, unzipSync } from 'fflate';
 import { isRecord } from './settings';
-import { parseVersion } from './update-source';
+import { fetchChromeRelease, UPDATE_PERMISSION } from './update-source';
 
-const REPOSITORY = 'svyatoslav-p/confluence-tools-ci';
-const API_ORIGIN = 'https://api.github.com';
-const GITHUB_ORIGIN = 'https://github.com';
-const ASSET_ORIGINS = [GITHUB_ORIGIN, 'https://release-assets.githubusercontent.com', 'https://objects.githubusercontent.com'];
-const MAX_ZIP_SIZE = 5 * 1024 * 1024;
+const ASSET_ORIGINS = ['https://github.com', 'https://release-assets.githubusercontent.com', 'https://objects.githubusercontent.com'];
 const MAX_EXPANDED_SIZE = 20 * 1024 * 1024;
 const MAX_FILES = 256;
 
-export const RELEASE_PERMISSIONS = { origins: [API_ORIGIN, ...ASSET_ORIGINS].map((origin) => origin + '/*') };
-
-async function fetchRelease(url: string, redirect: RequestRedirect) {
-  return fetch(url, {
-    cache: 'no-store', credentials: 'omit', redirect, signal: AbortSignal.timeout(60000),
-  });
-}
+export const RELEASE_PERMISSIONS = { origins: [...UPDATE_PERMISSION.origins, ...ASSET_ORIGINS.map((origin) => origin + '/*')] };
 
 export async function downloadRelease(version: string, name: string) {
-  if (!parseVersion(version)) throw new Error('Некорректная версия выпуска.');
-  const tag = 'v' + version;
-  const filename = 'confluence-tools-ci-chrome-' + version + '.zip';
-  const url = GITHUB_ORIGIN + '/' + REPOSITORY + '/releases/download/' + tag + '/' + filename;
-  const response = await fetchRelease(API_ORIGIN + '/repos/' + REPOSITORY + '/releases/tags/' + tag, 'error');
-  if (response.status === 404) throw new Error('ZIP этой версии ещё не опубликован в GitHub Releases.');
-  if (!response.ok) throw new Error('Не удалось получить данные выпуска GitHub. HTTP ' + response.status);
-  const release: unknown = await response.json();
-  if (!isRecord(release) || release.tag_name !== tag || release.draft !== false || release.prerelease !== false ||
-      !Array.isArray(release.assets)) {
-    throw new Error('GitHub не вернул опубликованный выпуск нужной версии.');
-  }
-  const asset: unknown = release.assets.find((value: unknown) => isRecord(value) && value.name === filename);
-  if (!isRecord(asset) || asset.state !== 'uploaded' || asset.browser_download_url !== url ||
-      typeof asset.digest !== 'string' || !/^sha256:[a-f0-9]{64}$/.test(asset.digest) ||
-      typeof asset.size !== 'number' || !Number.isSafeInteger(asset.size) || asset.size <= 0 || asset.size > MAX_ZIP_SIZE) {
-    throw new Error('Для выпуска недоступен ZIP с контрольной суммой SHA-256.');
-  }
-
-  const archive = await fetchRelease(url, 'follow');
+  const asset = await fetchChromeRelease(version);
+  if (!asset) throw new Error('Для выпуска недоступен ZIP с контрольной суммой SHA-256.');
+  const archive = await fetch(asset.url, {
+    cache: 'no-store', credentials: 'omit', redirect: 'follow', signal: AbortSignal.timeout(60000),
+  });
   if (!archive.ok || !archive.body || !ASSET_ORIGINS.includes(new URL(archive.url).origin)) {
     throw new Error('Не удалось скачать ZIP из GitHub Releases.');
   }

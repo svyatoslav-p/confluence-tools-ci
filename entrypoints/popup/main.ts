@@ -1,6 +1,6 @@
 import { definitions } from '../../core/definitions';
 import { loadSettings, onSettingsChanged, saveSettings } from '../../core/storage';
-import { availableUpdate, UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY } from '../../core/update-source';
+import { availableUpdate, UPDATE_STATE_KEY } from '../../core/update-source';
 import type { Settings } from '../../core/types';
 
 const enabled = document.querySelector<HTMLInputElement>('#enabled')!;
@@ -18,16 +18,12 @@ document.querySelector('#version')!.textContent = chrome.runtime.getManifest().v
 async function renderUpdate() {
   const render = ++updateRender;
   const box = document.querySelector<HTMLElement>('#update-available')!;
-  const link = document.querySelector<HTMLAnchorElement>('#update-download')!;
   try {
-    const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY]);
+    const stored = await chrome.storage.local.get(UPDATE_STATE_KEY);
     if (render !== updateRender) return;
     const update = availableUpdate(stored, chrome.runtime.getManifest().version);
     box.hidden = !update;
-    link.hidden = !update?.downloadUrl;
-    link.removeAttribute('href');
-    document.querySelector('#update-version')!.textContent = update ? `Доступна новая версия: ${update.version}` : '';
-    if (update?.downloadUrl) link.href = update.downloadUrl;
+    document.querySelector('#update-version')!.textContent = update ? `Доступна новая версия: ${update}` : '';
   } catch {
     if (render === updateRender) box.hidden = true;
   }
@@ -94,7 +90,7 @@ document.querySelector('#open-options')!.addEventListener('click', async () => {
 async function init() {
   const unsubscribe = onSettingsChanged((current) => { settings = current; render(); });
   const updatesChanged = (changes: Record<string, chrome.storage.StorageChange>, area: string) => {
-    if (area === 'local' && [...UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY].some((key) => changes[key])) void renderUpdate();
+    if (area === 'local' && changes[UPDATE_STATE_KEY]) void renderUpdate();
   };
   chrome.storage.onChanged.addListener(updatesChanged);
   window.addEventListener('pagehide', () => {

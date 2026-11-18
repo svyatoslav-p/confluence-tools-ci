@@ -37,24 +37,19 @@
 
       <section id="panel-updates" role="tabpanel" aria-labelledby="tab-updates" hidden>
         <h2>Обновление</h2>
-        <p class="hint">При запуске браузера версия расширения сравнивается с version в package.json.
-          При доступном обновлении на значке появляется «!», а здесь — ссылка на сборки. Пустой адрес отключает проверку.</p>
-        <label for="update-repository">URL файла package.json</label>
-        <form id="update-form" class="row">
-          <input id="update-repository" type="text" placeholder="https://raw.githubusercontent.com/svyatoslav-p/confluence-tools-ci/refs/heads/main/package.json" autocomplete="off" />
-          <button type="submit">Сохранить</button>
-        </form>
-        <p id="update-feedback" role="status" hidden></p>
+        <p class="hint">Расширение ищет готовый выпуск в GitHub Releases. Когда доступно обновление, на значке появляется «!».</p>
+        <label class="update-toggle"><input id="auto-check-updates" type="checkbox" checked disabled />Автоматически проверять обновления</label>
+        <p id="update-feedback" class="error" role="status" hidden></p>
         <div id="update-access" hidden>
-          <p>Для проверки обновлений разрешите доступ к <strong id="update-host"></strong>. Расширение читает с этого сайта <code>package.json</code>, чтобы узнать номер доступной версии.</p>
+          <p>Для проверки обновлений разрешите доступ к <strong>api.github.com</strong>. Расширение читает номер выпуска и данные о ZIP для Chrome.</p>
           <button id="grant-update-access" type="button" class="primary">Разрешить проверку обновлений</button>
         </div>
         <p>Текущая версия: <strong id="installed-version"></strong></p>
         <p id="update-status" role="status"></p>
         <p id="update-error" class="error" role="status" hidden></p>
-        <p><a id="update-artifact" target="_blank" rel="noopener noreferrer" hidden></a></p>
+        <p><a href="https://github.com/svyatoslav-p/confluence-tools-ci/releases" target="_blank" rel="noopener noreferrer">Открыть сборки</a></p>
         <div id="install-update-panel" hidden>
-          <p id="install-update-hint" class="hint"></p>
+          <p id="install-update-hint" class="hint">Установка скачает ZIP из официального выпуска на GitHub. Chrome может попросить выбрать папку расширения и разрешить запись.</p>
           <button id="install-update" type="button" class="primary" aria-describedby="install-update-hint" disabled>Установить обновление</button>
           <button id="choose-update-folder" type="button" hidden>Выбрать другую папку</button>
           <p id="install-update-status" role="status" hidden></p>

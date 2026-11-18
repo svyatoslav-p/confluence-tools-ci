@@ -1,73 +1,72 @@
 import { isRecord } from './settings';
-import { compareVersions, parseUpdateSource, readPackageVersion, storedUpdateSource,
-  UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY as STATE_KEY } from './update-source';
+import { compareVersions, fetchChromeRelease, LATEST_RELEASE_URL, readUpdateState,
+  UPDATE_AUTO_CHECK_KEY, UPDATE_PERMISSION, UPDATE_STATE_KEY } from './update-source';
 
 async function clearUpdateBadge() {
   await chrome.action.setBadgeText({ text: '' });
   await chrome.action.setTitle({ title: 'Confluence Tools CI — управление модулями' });
 }
 
+async function clearUpdateState() {
+  await chrome.storage.local.remove(UPDATE_STATE_KEY);
+  await clearUpdateBadge();
+}
+
 export async function checkForUpdates(): Promise<void> {
-  const stored = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
-  const source = parseUpdateSource(storedUpdateSource(stored));
-  if (!source || !await chrome.permissions.contains({ origins: [source.permission] })) {
-    await clearUpdateBadge();
-    await chrome.storage.local.remove(STATE_KEY);
-    return;
-  }
-  const response = await fetch(source.url, {
-    cache: 'no-store', credentials: 'omit', redirect: 'error', signal: AbortSignal.timeout(15000),
-  });
-  if (!response.ok) throw new Error(`Не удалось прочитать package.json: HTTP ${response.status}`);
-  const metadata: unknown = await response.json();
-  const version = readPackageVersion(metadata);
-  if (!version) throw new Error('В package.json отсутствует корректная числовая версия version.');
-  const downloadUrl = isRecord(metadata) ? parseUpdateSource(metadata.downloadUrl)?.url ?? '' : '';
+  if (!await chrome.permissions.contains(UPDATE_PERMISSION)) return clearUpdateState();
   const installedVersion = chrome.runtime.getManifest().version;
-  const available = compareVersions(version, installedVersion) > 0;
-  const current = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
-  if (storedUpdateSource(current) !== source.url) return;
-  await chrome.storage.local.set({ [STATE_KEY]: { source: source.url, available, version, installedVersion, downloadUrl,
-    checking: false, error: '', checkedAt: Date.now() } });
-  if (!available) return clearUpdateBadge();
-  await chrome.action.setBadgeText({ text: '!' });
-  await chrome.action.setBadgeBackgroundColor({ color: '#0052CC' });
-  await chrome.action.setTitle({ title: 'Confluence Tools CI — доступна новая версия' });
+  const stored = await chrome.storage.local.get(UPDATE_STATE_KEY);
+  const previous = readUpdateState(stored, installedVersion);
+  const state = { ...previous, source: LATEST_RELEASE_URL, installedVersion };
+  await chrome.storage.local.set({ [UPDATE_STATE_KEY]: { ...state, checking: true, error: '' } });
+  try {
+    const release = await fetchChromeRelease();
+    if (!await chrome.permissions.contains(UPDATE_PERMISSION)) return clearUpdateState();
+    await chrome.storage.local.set({ [UPDATE_STATE_KEY]: {
+      ...state, version: release?.version ?? null, checking: false, error: '', checkedAt: Date.now(),
+    } });
+    if (!release || compareVersions(release.version, installedVersion) <= 0) return clearUpdateBadge();
+    await chrome.action.setBadgeText({ text: '!' });
+    await chrome.action.setBadgeBackgroundColor({ color: '#0052CC' });
+    await chrome.action.setTitle({ title: 'Confluence Tools CI — доступна новая версия' });
+  } catch (error) {
+    if (!await chrome.permissions.contains(UPDATE_PERMISSION)) return clearUpdateState();
+    await chrome.storage.local.set({ [UPDATE_STATE_KEY]: {
+      ...state, checking: false, error: error instanceof Error ? error.message : 'Не удалось проверить обновления.',
+    } });
+    console.error('[Confluence Tools CI] Проверка обновлений не удалась', error);
+  }
 }
 
 export function setupUpdateChecks() {
   let queue = Promise.resolve();
-  const check = () => {
-    queue = queue.then(async () => {
-      const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, STATE_KEY]);
-      const source = storedUpdateSource(stored);
-      const installedVersion = chrome.runtime.getManifest().version;
-      const state = isRecord(stored[STATE_KEY]) && stored[STATE_KEY].source === source &&
-        stored[STATE_KEY].installedVersion === installedVersion ? stored[STATE_KEY] : {};
-      if (source) await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, installedVersion, checking: true, error: '' } });
-      try { await checkForUpdates(); }
-      catch (error) {
-        const current = await chrome.storage.local.get(UPDATE_CONFIG_KEYS);
-        if (source && storedUpdateSource(current) === source) {
-          await chrome.storage.local.set({ [STATE_KEY]: { ...state, source, installedVersion, checking: false,
-            error: error instanceof Error ? error.message : 'Не удалось проверить обновления.' } });
-        }
-        console.error('[Confluence Tools CI] Проверка обновлений не удалась', error);
-      }
-    }).catch((error) => console.error('[Confluence Tools CI] Проверка обновлений не удалась', error));
+  const enqueue = (action: () => Promise<void>) => {
+    queue = queue.then(action).catch((error) => console.error('[Confluence Tools CI] Проверка обновлений не удалась', error));
     return queue;
   };
-  chrome.runtime.onStartup.addListener(() => { void check(); });
-  chrome.runtime.onInstalled.addListener(() => { void check(); });
+  const checkAutomatically = () => enqueue(async () => {
+    const stored = await chrome.storage.local.get(UPDATE_AUTO_CHECK_KEY);
+    if (stored[UPDATE_AUTO_CHECK_KEY] !== false) await checkForUpdates();
+  });
+  const isUpdatePermission = ({ origins }: chrome.permissions.Permissions) =>
+    origins?.some((origin) => UPDATE_PERMISSION.origins.includes(origin));
+
+  chrome.runtime.onStartup.addListener(() => { void checkAutomatically(); });
+  chrome.runtime.onInstalled.addListener(() => { void checkAutomatically(); });
   chrome.runtime.onMessage.addListener((message: unknown, sender, respond) => {
     if (sender.id !== chrome.runtime.id || !isRecord(message) || message.type !== 'check-updates') return;
-    void check().then(() => respond({ ok: true }));
+    void enqueue(checkForUpdates).then(() => respond({ ok: true }));
     return true;
   });
+  chrome.permissions.onAdded.addListener((permissions) => {
+    if (isUpdatePermission(permissions)) void checkAutomatically();
+  });
+  chrome.permissions.onRemoved.addListener((permissions) => {
+    if (isUpdatePermission(permissions)) void enqueue(async () => {
+      if (!await chrome.permissions.contains(UPDATE_PERMISSION)) await clearUpdateState();
+    });
+  });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes[UPDATE_SOURCE_KEY]) {
-      queue = queue.then(clearUpdateBadge).catch(console.error);
-      void check();
-    }
+    if (area === 'local' && changes[UPDATE_AUTO_CHECK_KEY]?.newValue === true) void checkAutomatically();
   });
 }

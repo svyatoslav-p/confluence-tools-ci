@@ -3,33 +3,28 @@ import {
   supportsLocalInstall, validateInstallFolder, type WritableFolder,
 } from '../../core/local-install';
 import { downloadRelease, RELEASE_PERMISSIONS } from '../../core/update-release';
-import { availableUpdate, DEFAULT_UPDATE_SOURCE, storedUpdateSource, UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY } from '../../core/update-source';
+import { availableUpdate, UPDATE_STATE_KEY } from '../../core/update-source';
 
 export function createUpdateInstaller() {
   const panel = document.querySelector<HTMLElement>('#install-update-panel')!;
-  const hint = document.querySelector<HTMLElement>('#install-update-hint')!;
   const button = document.querySelector<HTMLButtonElement>('#install-update')!;
   const folderButton = document.querySelector<HTMLButtonElement>('#choose-update-folder')!;
   const status = document.querySelector<HTMLElement>('#install-update-status')!;
   const installed = chrome.runtime.getManifest();
   let folder: WritableFolder | undefined;
   let version: string | null = null;
-  let officialSource = false;
   let busy = false;
   let hasDownloadAccess = false;
   let supported = false;
 
   function render() {
-    panel.hidden = !supported;
+    panel.hidden = !version && !busy;
+    button.hidden = !version;
     button.disabled = busy || !version;
     folderButton.hidden = !version || !folder || !hasDownloadAccess;
     folderButton.disabled = busy;
-    if (!busy) {
-      button.textContent = !version ? 'Установить обновление'
-        : hasDownloadAccess ? 'Установить обновление ' + version : 'Разрешить скачивание с GitHub';
-      hint.textContent = !officialSource ? 'Установка ZIP доступна для официального источника обновлений.'
-        : !version ? 'Кнопка станет активной после обнаружения новой версии.'
-        : 'Установка скачает ZIP из официального выпуска на GitHub. Chrome может попросить выбрать папку расширения и разрешить запись.';
+    if (version && !busy) {
+      button.textContent = hasDownloadAccess ? 'Установить обновление ' + version : 'Разрешить скачивание с GitHub';
     }
   }
 
@@ -79,8 +74,8 @@ export function createUpdateInstaller() {
   }
 
   async function checkSelectedVersion(expected: string) {
-    const stored = await chrome.storage.local.get([...UPDATE_CONFIG_KEYS, UPDATE_STATE_KEY]);
-    if (storedUpdateSource(stored) !== DEFAULT_UPDATE_SOURCE || availableUpdate(stored, installed.version)?.version !== expected) {
+    const stored = await chrome.storage.local.get(UPDATE_STATE_KEY);
+    if (availableUpdate(stored, installed.version) !== expected) {
       throw new Error('Доступная версия изменилась. Проверьте обновление снова.');
     }
   }
@@ -132,12 +127,11 @@ export function createUpdateInstaller() {
 
   chrome.permissions.onAdded.addListener(() => void refreshAccess());
   chrome.permissions.onRemoved.addListener(() => void refreshAccess());
-  return async (nextVersion: string | null, usesOfficialSource: boolean) => {
+  return async (nextVersion: string | null) => {
     await initialized;
     if (!supported) return;
     if (version !== nextVersion && !busy) show('');
     version = nextVersion;
-    officialSource = usesOfficialSource;
     render();
   };
 }

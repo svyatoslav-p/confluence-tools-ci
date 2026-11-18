@@ -25,11 +25,11 @@ test('выбор папки передаёт Chrome допустимый иде�
   assert.equal(await chooseInstallFolder(), folder);
 });
 
-test('кнопка установки видна до обнаружения новой версии и активируется после проверки', async () => {
-  const controls = new Map(['panel', 'hint', 'button', 'folder', 'status'].map((key) =>
+test('кнопка установки показывается только при наличии новой версии', async () => {
+  const controls = new Map(['panel', 'button', 'folder', 'status'].map((key) =>
     [key, { hidden: true, disabled: true, textContent: '', addEventListener() {} }]));
   const selectors = {
-    '#install-update-panel': 'panel', '#install-update-hint': 'hint', '#install-update': 'button',
+    '#install-update-panel': 'panel', '#install-update': 'button',
     '#choose-update-folder': 'folder', '#install-update-status': 'status',
   };
   const { createUpdateInstaller } = loadTs('entrypoints/options/install-update.ts', {
@@ -49,19 +49,19 @@ test('кнопка установки видна до обнаружения н�
   const render = createUpdateInstaller();
   const panel = controls.get('panel');
   const button = controls.get('button');
-  const hint = controls.get('hint');
-  await render(null, true);
-  assert.equal(panel.hidden, false);
+  await render(null);
+  assert.equal(panel.hidden, true);
+  assert.equal(button.hidden, true);
   assert.equal(button.disabled, true);
-  assert.equal(button.textContent, 'Установить обновление');
-  assert.match(hint.textContent, /после обнаружения новой версии/);
-  await render('0.1.6', true);
+  await render('0.1.6');
+  assert.equal(panel.hidden, false);
+  assert.equal(button.hidden, false);
   assert.equal(button.disabled, false);
   assert.equal(button.textContent, 'Установить обновление 0.1.6');
-  await render(null, false);
-  assert.equal(panel.hidden, false);
+  await render(null);
+  assert.equal(panel.hidden, true);
+  assert.equal(button.hidden, true);
   assert.equal(button.disabled, true);
-  assert.match(hint.textContent, /официального источника/);
 });
 
 test('распаковка проверяет версию, состав и пути ZIP перед установкой Windows', () => {
