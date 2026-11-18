@@ -13,6 +13,18 @@ files['manifest.json'] = strToU8(JSON.stringify(manifest));
 const dependencies = { fflate: { strFromU8, unzipSync } };
 const { readReleaseZip } = loadTs('core/update-release.ts', { imports: dependencies });
 
+test('выбор папки передаёт Chrome допустимый идентификатор и запрашивает запись', async () => {
+  const folder = {};
+  const window = { async showDirectoryPicker({ id, mode }) {
+    assert.equal(this, window);
+    assert.match(id, /^[a-zA-Z0-9_-]{1,32}$/);
+    assert.equal(mode, 'readwrite');
+    return folder;
+  } };
+  const { chooseInstallFolder } = loadTs('core/local-install.ts', { globals: { window } });
+  assert.equal(await chooseInstallFolder(), folder);
+});
+
 test('кнопка установки видна до обнаружения новой версии и активируется после проверки', async () => {
   const controls = new Map(['panel', 'hint', 'button', 'folder', 'status'].map((key) =>
     [key, { hidden: true, disabled: true, textContent: '', addEventListener() {} }]));

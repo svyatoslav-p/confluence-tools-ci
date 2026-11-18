@@ -39,7 +39,7 @@ export const loadInstallFolder = () => folderSetting();
 export const chooseInstallFolder = () => {
   const show = picker();
   if (!show) throw new Error('Эта версия браузера не позволяет выбрать папку для записи.');
-  return show.call(window, { mode: 'readwrite', id: 'confluence-tools-ci-install-folder' });
+  return show.call(window, { mode: 'readwrite', id: 'ctci-install-folder' });
 };
 
 async function writeFile(file: FileSystemFileHandle, data: FileSystemWriteChunkType) {
