@@ -105,6 +105,8 @@ section,
 
 #update-access p { margin: 0 0 8px; }
 
+#install-update-panel { margin-bottom: 16px; }
+
 .row {
   display: flex;
   gap: 8px;

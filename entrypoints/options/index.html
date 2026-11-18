@@ -53,6 +53,12 @@
         <p id="update-status" role="status"></p>
         <p id="update-error" class="error" role="status" hidden></p>
         <p><a id="update-artifact" target="_blank" rel="noopener noreferrer" hidden></a></p>
+        <div id="install-update-panel" hidden>
+          <p id="install-update-hint" class="hint"></p>
+          <button id="install-update" type="button" class="primary" aria-describedby="install-update-hint" disabled>Установить обновление</button>
+          <button id="choose-update-folder" type="button" hidden>Выбрать другую папку</button>
+          <p id="install-update-status" role="status" hidden></p>
+        </div>
         <button id="check-updates" type="button" disabled>Проверить обновление</button>
       </section>
 

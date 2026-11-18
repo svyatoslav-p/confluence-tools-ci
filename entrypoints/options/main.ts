@@ -3,8 +3,9 @@ import { eventToHotkey, findHotkeyConflict, formatHotkey } from '../../core/hotk
 import { definitions } from '../../core/definitions';
 import { hostToPattern, isRecord, normalizeHost } from '../../core/settings';
 import { loadSettings, onSettingsChanged, saveSettings } from '../../core/storage';
-import { parseUpdateSource, storedUpdateSource, UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY } from '../../core/update-source';
+import { availableUpdate, DEFAULT_UPDATE_SOURCE, parseUpdateSource, storedUpdateSource, UPDATE_CONFIG_KEYS, UPDATE_SOURCE_KEY, UPDATE_STATE_KEY } from '../../core/update-source';
 import type { FeatureDefinition, SettingField, Settings } from '../../core/types';
+import { createUpdateInstaller } from './install-update';
 
 const hostsList = document.querySelector<HTMLUListElement>('#hosts')!;
 const hostForm = document.querySelector<HTMLFormElement>('#host-form')!;
@@ -22,6 +23,7 @@ const updateAccess = document.querySelector<HTMLElement>('#update-access')!;
 const updateHost = document.querySelector<HTMLElement>('#update-host')!;
 const grantUpdateAccess = document.querySelector<HTMLButtonElement>('#grant-update-access')!;
 const checkUpdatesButton = document.querySelector<HTMLButtonElement>('#check-updates')!;
+const renderUpdateInstaller = createUpdateInstaller();
 let savedUpdateSource = '';
 let updateRender = 0;
 let manualUpdateCheck = false;
@@ -149,6 +151,9 @@ async function renderUpdateStatus() {
   updateHost.textContent = source ? new URL(source.url).host : '';
   const installedVersion = chrome.runtime.getManifest().version;
   installedVersionLabel.textContent = installedVersion;
+  const usesOfficialSource = savedUpdateSource === DEFAULT_UPDATE_SOURCE;
+  const release = hasAccess && usesOfficialSource ? availableUpdate(stored, installedVersion) : null;
+  void renderUpdateInstaller(release?.version ?? null, usesOfficialSource);
   const raw = stored[UPDATE_STATE_KEY];
   const state = isRecord(raw) && raw.source === savedUpdateSource && raw.installedVersion === installedVersion ? raw : {};
   const checking = state.checking === true;

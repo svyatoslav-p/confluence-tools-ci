@@ -3,6 +3,7 @@ name: Build Chrome extension
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -19,18 +20,28 @@ jobs:
     name: Test and package Chrome extension
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    outputs:
+      artifact-id: ${{ steps.artifact.outputs.artifact-id }}
+      filename: ${{ steps.package.outputs.filename }}
 
     steps:
       - name: Checkout source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: ${{ github.ref_type == 'tag' && '0' || '1' }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: npm
+
+      - name: Verify release tag
+        if: github.ref_type == 'tag'
+        run: |
+          test "$GITHUB_REF_NAME" = "v$(node -p "require('./package.json').version")"
+          git merge-base --is-ancestor HEAD origin/main
 
       - name: Install dependencies
         run: npm ci
@@ -56,11 +67,39 @@ jobs:
           mkdir -p .output/artifact
           cp ".output/confluence-ext-${version}-chrome.zip" ".output/artifact/${filename}"
           echo "path=.output/artifact/${filename}" >> "$GITHUB_OUTPUT"
+          echo "filename=${filename}" >> "$GITHUB_OUTPUT"
 
       - name: Upload Chrome ZIP
+        id: artifact
         uses: actions/upload-artifact@v7
         with:
           path: ${{ steps.package.outputs.path }}
           archive: false
           if-no-files-found: error
           retention-days: 90
+
+  publish:
+    name: Publish versioned Chrome ZIP to GitHub Releases
+    if: github.event_name == 'push' && github.ref_type == 'tag'
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Download tested Chrome ZIP
+        uses: actions/download-artifact@v8
+        with:
+          artifact-ids: ${{ needs.build.outputs.artifact-id }}
+          path: release
+          merge-multiple: true
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          ARTIFACT: ${{ needs.build.outputs.filename }}
+        run: |
+          version=${GITHUB_REF_NAME#v}
+          filename="confluence-tools-ci-chrome-${version}.zip"
+          mv "release/${ARTIFACT}" "release/${filename}"
+          gh release create "$GITHUB_REF_NAME" --verify-tag --generate-notes "release/${filename}"
