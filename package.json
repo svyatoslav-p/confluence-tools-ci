@@ -2,7 +2,7 @@
   "name": "confluence-ext",
   "description": "Модульное расширение Chrome с инструментами для Confluence Data Center",
   "private": true,
-  "version": "0.1.6",
+  "version": "0.1.7",
   "downloadUrl": "https://github.com/svyatoslav-p/confluence-tools-ci/releases",
   "type": "module",
   "scripts": {
