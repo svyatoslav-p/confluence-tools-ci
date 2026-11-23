@@ -47,7 +47,7 @@ function fixture(always = true, overrides = {}) {
     undoManager: { transact: (callback) => callback() },
     formatter: { register() {}, remove: (...args) => calls.push(['remove', ...args]), apply: (...args) => calls.push(args) }, execCommand: (...args) => calls.push(args) };
   const { default: feature } = loadTs('features/selection-toolbar/index.ts', { globals: {
-    window, document, Node: { ELEMENT_NODE: 1, DOCUMENT_POSITION_FOLLOWING: 4 },
+    window, document, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_POSITION_FOLLOWING: 4 }, NodeFilter: { SHOW_TEXT: 4 },
   } });
   const values = Object.fromEntries(feature.settings.map((field) => [field.key, field.default]));
   values.showWithoutCtrl = String(always);
@@ -68,7 +68,7 @@ test('панель ждёт mouseup, появляется у конца выде
     await pause();
     assert.equal(f.toolbar.style.display, 'flex');
     assert.equal(f.toolbar.style.top, '328px');
-    assert.equal(f.toolbar.children.length, 4);
+    assert.equal(f.toolbar.children.length, 5);
     assert.equal(f.toolbar.children.some((button) => button.getAttribute('aria-label') === 'Очистить стиль'), false);
     f.cleanup();
     input(f.editorDoc, 'selectionchange'); await pause();
@@ -198,8 +198,47 @@ test('стандартный стиль снимает зачёркивание,
   } finally { f.cleanup(); }
 });
 
+test('«Применить правки» удаляет только выбранную часть красного зачёркнутого текста и сбрасывает стиль', () => {
+  const f = fixture(true, { redColor: '#800080' });
+  try {
+    const strike = new Element('strike');
+    strike.style.textDecorationLine = 'line-through';
+    const red = new Element('span');
+    red.style.color = '#800080';
+    strike.append(red);
+    f.body.append(strike);
+    const makeText = (data, parentElement) => ({
+      data, parentElement, get length() { return this.data.length; },
+      deleteData(start, count) { this.data = this.data.slice(0, start) + this.data.slice(start + count); },
+    });
+    const marked = makeText('keepdrop', red);
+    const struckOnly = makeText('struck', strike);
+    const plainRed = new Element('span');
+    plainRed.style.color = '#800080';
+    f.body.append(plainRed);
+    const redOnly = makeText('red', plainRed);
+    f.editorDoc.defaultView.getComputedStyle = (node) => ({ textDecorationLine: 'none', ...node.style });
+    f.editorDoc.createTreeWalker = () => {
+      const nodes = [marked, struckOnly, redOnly][Symbol.iterator]();
+      return { nextNode: () => nodes.next().value };
+    };
+    f.range.commonAncestorContainer = f.body;
+    f.range.startContainer = marked;
+    f.range.startOffset = 4;
+    f.selection.setRng = () => {};
+    let transactions = 0;
+    f.editor.undoManager.transact = (action) => { transactions++; action(); };
+    input(f.toolbar.children.find((button) => button.getAttribute('aria-label') === 'Применить правки'), 'click');
+    assert.equal(marked.data, 'keep');
+    assert.equal(struckOnly.data, 'struck');
+    assert.equal(redOnly.data, 'red');
+    assert.deepEqual(f.calls.map(([name]) => name), ['remove', 'ci-default-text']);
+    assert.equal(transactions, 1);
+  } finally { f.cleanup(); }
+});
+
 test('скрытые кнопки сохраняют горячие клавиши, пустая панель не появляется', async () => {
-  const f = fixture(true, { showClean: 'false', showDefault: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyB' });
+  const f = fixture(true, { showClean: 'false', showDefault: 'false', showApplyEdits: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyB' });
   try {
     assert.equal(f.toolbar.children.length, 0);
     input(f.editorDoc, 'selectionchange'); await pause();
@@ -211,7 +250,7 @@ test('скрытые кнопки сохраняют горячие клавиш
 });
 
 test('можно оставить только выбранные кнопки и переназначить стандартный стиль', () => {
-  const f = fixture(true, { showClean: 'false', showRed: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyN' });
+  const f = fixture(true, { showClean: 'false', showApplyEdits: 'false', showRed: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyN' });
   try {
     assert.deepEqual(f.toolbar.children.map((button) => button.getAttribute('aria-label')), ['Стиль по умолчанию', 'Добавлено']);
     assert.equal(input(f.editorDoc, 'keydown', { code: 'KeyB', altKey: true }).defaultPrevented, false);

@@ -1,6 +1,7 @@
 // Панель быстрого форматирования: появляется над выделенным текстом в редакторе,
 // пока зажат Ctrl. Те же действия доступны по горячим клавишам.
 import definition from './definition';
+import { removeDeletedText } from './deleted-text';
 import { convertIdentifier, selectedIdentifier } from './identifier';
 import { toggleTextCase } from './text-selection';
 import { eventToHotkey, formatHotkey } from '../../core/hotkeys';
@@ -135,8 +136,12 @@ function paintAdded(editor: TinyEditor, color: string) {
 }
 
 /** Отдельный inline-формат не меняет цвет родительского абзаца или списка. */
-function defaultStyle(editor: TinyEditor) {
+function defaultStyle(editor: TinyEditor, removeRed?: string) {
   editor.undoManager.transact(() => {
+    if (removeRed !== undefined) {
+      removeDeletedText(editor, [removeRed, editorColor(removeRed), '#c9372c', editorColor('#c9372c')]);
+      if (editor.selection.isCollapsed()) return;
+    }
     editor.formatter.remove('strikethrough');
     keepListItemStyles(editor, () => editor.formatter.apply('ci-default-text'));
     for (const span of editor.getBody().querySelectorAll<HTMLElement>('[data-ci-default-text]')) {
@@ -233,6 +238,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   const actions = [
     { text: 'Tx', title: 'Очистить стиль', visible: values.showClean, hotkey: values.hotkeyClean, run: () => clean(editor) },
     { text: 'A↺', title: 'Стиль по умолчанию', visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
+    { text: 'A✓', title: 'Применить правки', visible: values.showApplyEdits, hotkey: values.hotkeyApplyEdits, run: () => defaultStyle(editor, values.redColor) },
     { text: '−', title: 'Удалено', visible: values.showRed, color: values.redColor, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
     { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paintAdded(editor, values.greenColor) },
     { text: '', title: 'Устарело', more: true, visible: values.showYellow, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
