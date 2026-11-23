@@ -7,7 +7,6 @@ export interface TinyEditor {
   getBody(): HTMLElement;
   focus(): void;
   nodeChanged(): void;
-  execCommand(command: string, ui?: boolean, value?: unknown): boolean;
   selection: {
     getRng(): Range;
     setRng(range: Range): void;

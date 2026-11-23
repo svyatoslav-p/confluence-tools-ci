@@ -65,28 +65,6 @@ function keepListItemStyles(editor: TinyEditor, action: () => void) {
   }
 }
 
-/** Снимает цвет с самих пунктов списка, текст которых попал в выделение. */
-function cleanListItemColors(items: HTMLLIElement[]) {
-  for (const li of items) {
-    if (!li.style.color) continue;
-    li.style.color = '';
-    setStyleAttr(li, li.getAttribute('style'));
-  }
-}
-
-function clean(editor: TinyEditor) {
-  editor.undoManager.transact(() => {
-    const range = editor.selection.getRng();
-    // Определяем пункты до RemoveFormat: команда может удалить узлы границ Range.
-    const items = selectedListItems(editor).filter((li) =>
-      [...li.childNodes].some((node) => !/^(OL|UL)$/.test(node.nodeName) && range.intersectsNode(node)),
-    );
-    editor.execCommand('RemoveFormat');
-    cleanListItemColors(items);
-  });
-  editor.nodeChanged();
-}
-
 function paint(editor: TinyEditor, color: string) {
   editor.undoManager.transact(() => {
     keepListItemStyles(editor, () => {
@@ -238,11 +216,10 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
   }
 
   const actions = [
-    { text: 'Tx', title: 'Очистить стиль', visible: values.showClean, hotkey: values.hotkeyClean, run: () => clean(editor) },
-    { text: 'A↺', title: 'Стиль по умолчанию', visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
     { text: 'A✓', title: 'Применить правки', visible: values.showApplyEdits, hotkey: values.hotkeyApplyEdits, run: () => defaultStyle(editor, values.redColor) },
     { text: '−', title: 'Удалено', visible: values.showRed, color: values.redColor, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
     { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paintAdded(editor, values.greenColor) },
+    { text: '', title: 'Стиль по умолчанию', more: true, visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
     { text: '', title: 'Устарело', more: true, visible: values.showYellow, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
     { text: '', title: 'Camel/Snake', more: true, visible: values.showCase, hotkey: values.hotkeyCase,
       available: () => Boolean(selectedIdentifier(editor)), run: () => convertIdentifier(editor) },

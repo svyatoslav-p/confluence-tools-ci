@@ -39,13 +39,14 @@ for (const file of ['background.js', 'bridge.js']) {
 }
 test('background содержит только адреса, без каталога настроек функций', () => {
   assert.ok(!read('background.js').includes('Панель быстрого форматирования'));
-  assert.ok(!read('background.js').includes('hotkeyClean'));
+  assert.ok(!read('background.js').includes('hotkeyDefault'));
 });
 test('настройки содержат описание панели, а реализация остаётся только в app.js', () => {
   const file = fs.readdirSync(path.join(root, 'chunks')).find((name) => name.startsWith('options-') && name.endsWith('.js'));
   assert.ok(file, 'Options bundle missing');
   const options = readScript('chunks/' + file);
-  assert.ok(options.includes('hotkeyClean'));
+  assert.ok(options.includes('hotkeyDefault'));
+  assert.ok(!options.includes('hotkeyClean'));
   assert.ok(!options.includes('st-toolbar'));
   assert.ok(!options.includes('forecolor'));
   assert.ok(read('app.js').includes('st-toolbar'));

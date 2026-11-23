@@ -45,7 +45,7 @@ function fixture(always = true, overrides = {}) {
   const editor = { selection, getDoc: () => editorDoc, getBody: () => body, nodeChanged() {},
     iframeElement: { getBoundingClientRect: () => ({ left: 0, top: 100, bottom: 650 }) },
     undoManager: { transact: (callback) => callback() },
-    formatter: { register() {}, remove: (...args) => calls.push(['remove', ...args]), apply: (...args) => calls.push(args) }, execCommand: (...args) => calls.push(args) };
+    formatter: { register() {}, remove: (...args) => calls.push(['remove', ...args]), apply: (...args) => calls.push(args) } };
   const { default: feature } = loadTs('features/selection-toolbar/index.ts', { globals: {
     window, document, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_POSITION_FOLLOWING: 4 }, NodeFilter: { SHOW_TEXT: 4 },
   } });
@@ -68,8 +68,9 @@ test('панель ждёт mouseup, появляется у конца выде
     await pause();
     assert.equal(f.toolbar.style.display, 'flex');
     assert.equal(f.toolbar.style.top, '328px');
-    assert.equal(f.toolbar.children.length, 5);
-    assert.equal(f.toolbar.children.some((button) => button.getAttribute('aria-label') === 'Очистить стиль'), false);
+    assert.deepEqual(f.toolbar.children.slice(0, -1).map((button) => button.getAttribute('aria-label')),
+      ['Применить правки', 'Удалено', 'Добавлено']);
+    assert.equal(f.toolbar.children.at(-1).className, 'st-more');
     f.cleanup();
     input(f.editorDoc, 'selectionchange'); await pause();
     assert.equal(f.root.children.length, 0);
@@ -177,8 +178,8 @@ test('«Добавлено» форматирует только части вы
   } finally { f.cleanup(); }
 });
 
-test('стандартный стиль снимает зачёркивание, возвращает цвет ссылок и удаляет служебные метки', () => {
-  const f = fixture();
+test('стандартный стиль из меню снимает зачёркивание, восстанавливает цвет ссылок и удаляет служебные метки', () => {
+  const f = fixture(true, { showCase: 'false' });
   try {
     const span = new Element('span');
     span.setAttribute('data-ci-default-text', 'true');
@@ -188,7 +189,17 @@ test('стандартный стиль снимает зачёркивание,
     link.getAttribute = (name) => name === 'style' ? `color: ${link.style.color};` : link.attributes.get(name) ?? null;
     span.querySelectorAll = () => [link];
     f.body.querySelectorAll = () => [span];
-    input(f.toolbar.children.find((button) => button.getAttribute('aria-label') === 'Стиль по умолчанию'), 'click');
+    const more = f.toolbar.children.at(-1);
+    const [trigger, menu] = more.children;
+    more.getBoundingClientRect = () => ({ left: 150, right: 180, top: 100 });
+    menu.getBoundingClientRect = () => ({ width: 160, height: 90 });
+    assert.equal(menu.hidden, true);
+    input(trigger, 'click');
+    assert.equal(menu.hidden, false);
+    const action = menu.children[0];
+    assert.equal(action.getAttribute('aria-label'), 'Стиль по умолчанию');
+    input(action, 'click');
+    assert.equal(menu.hidden, true);
     assert.deepEqual(f.calls.map((args) => args[0]), ['remove', 'ci-default-text']);
     assert.equal(f.calls[0][1], 'strikethrough');
     assert.equal(link.style.color, 'var(--ds-link, #0052CC)');
@@ -292,7 +303,7 @@ test('«Применить правки» убирает текст и пере�
 });
 
 test('скрытые кнопки сохраняют горячие клавиши, пустая панель не появляется', async () => {
-  const f = fixture(true, { showClean: 'false', showDefault: 'false', showApplyEdits: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyB' });
+  const f = fixture(true, { showDefault: 'false', showApplyEdits: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyB' });
   try {
     assert.equal(f.toolbar.children.length, 0);
     input(f.editorDoc, 'selectionchange'); await pause();
@@ -304,9 +315,11 @@ test('скрытые кнопки сохраняют горячие клавиш
 });
 
 test('можно оставить только выбранные кнопки и переназначить стандартный стиль', () => {
-  const f = fixture(true, { showClean: 'false', showApplyEdits: 'false', showRed: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyN' });
+  const f = fixture(true, { showApplyEdits: 'false', showRed: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyN' });
   try {
-    assert.deepEqual(f.toolbar.children.map((button) => button.getAttribute('aria-label')), ['Стиль по умолчанию', 'Добавлено']);
+    const [added, more] = f.toolbar.children;
+    assert.equal(added.getAttribute('aria-label'), 'Добавлено');
+    assert.deepEqual(more.children[1].children.map((button) => button.getAttribute('aria-label')), ['Стиль по умолчанию']);
     assert.equal(input(f.editorDoc, 'keydown', { code: 'KeyB', altKey: true }).defaultPrevented, false);
     assert.equal(input(f.editorDoc, 'keydown', { code: 'KeyN', altKey: true }).defaultPrevented, true);
   } finally { f.cleanup(); }
