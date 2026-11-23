@@ -139,8 +139,10 @@ function paintAdded(editor: TinyEditor, color: string) {
 function defaultStyle(editor: TinyEditor, removeRed?: string) {
   editor.undoManager.transact(() => {
     if (removeRed !== undefined) {
-      removeDeletedText(editor, [removeRed, editorColor(removeRed), '#c9372c', editorColor('#c9372c')]);
-      if (editor.selection.isCollapsed()) return;
+      // При выделении ячеек DOM Range охватывает только последнюю ячейку.
+      const cells = [...editor.getBody().querySelectorAll<HTMLTableCellElement>('td[data-mce-selected], th[data-mce-selected]')];
+      removeDeletedText(editor, [removeRed, editorColor(removeRed), '#c9372c', editorColor('#c9372c')], cells);
+      if (!cells.length && editor.selection.isCollapsed()) return;
     }
     editor.formatter.remove('strikethrough');
     keepListItemStyles(editor, () => editor.formatter.apply('ci-default-text'));

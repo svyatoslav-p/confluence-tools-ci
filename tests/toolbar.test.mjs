@@ -237,6 +237,60 @@ test('«Применить правки» удаляет только выбра
   } finally { f.cleanup(); }
 });
 
+test('«Применить правки» убирает текст и перенос во всех отмеченных TinyMCE ячейках', () => {
+  const makeCell = (deleted, kept) => {
+    const cell = new Element('td');
+    cell.closest = (selector) => selector.split(', ').includes('td') ? cell : null;
+    cell.contains = (node) => node === cell || cell.children.includes(node);
+    cell.style = { color: '#c9372c', textDecorationLine: 'line-through' };
+    cell.hasChildNodes = () => cell.children.length > 0;
+    const newline = new Element('br');
+    newline.closest = cell.closest;
+    const marked = {
+      nodeType: 3, data: deleted, get length() { return this.data.length; },
+      compareDocumentPosition: () => 4,
+      deleteData() { this.data = ''; },
+      remove() { cell.children = cell.children.filter((node) => node !== this); },
+    };
+    const remaining = { data: kept };
+    cell.append(marked, newline, remaining);
+    cell.querySelectorAll = (selector) => selector.startsWith('br') ? [newline] : [];
+    return { cell, marked, remaining };
+  };
+  const f = fixture();
+  try {
+    const first = makeCell('false', 'true');
+    const last = makeCell('нет', 'да');
+    const outside = makeCell('keep', 'outside');
+    f.body.append(first.cell, last.cell, outside.cell);
+    // Браузерный Range содержит только текст последней ячейки, как при выделении мышью.
+    f.range.commonAncestorContainer = last.marked;
+    f.body.querySelectorAll = (selector) => selector.includes('[data-mce-selected]') ? [first.cell, last.cell] : [];
+    f.editorDoc.createTreeWalker = (root) => {
+      const nodes = (root.children ?? []).filter((node) => node.nodeType === 3)[Symbol.iterator]();
+      return { nextNode: () => nodes.next().value };
+    };
+    f.editorDoc.defaultView.getComputedStyle = (node) => ({ textDecorationLine: 'none', ...node.style });
+    f.editorDoc.createRange = () => ({
+      selectNodeContents(block) { this.commonAncestorContainer = block; },
+      intersectsNode: () => true,
+      setEndBefore(node) { this.end = node; },
+      cloneContents() {
+        const { children } = this.commonAncestorContainer;
+        const textContent = children.slice(0, children.indexOf(this.end)).map((node) => node.data).join('');
+        return { textContent, querySelector: () => null };
+      },
+      deleteContents() {},
+    });
+    f.selection.setRng = () => {};
+    input(f.toolbar.children.find((button) => button.getAttribute('aria-label') === 'Применить правки'), 'click');
+    assert.deepEqual(first.cell.children, [first.remaining]);
+    assert.deepEqual(last.cell.children, [last.remaining]);
+    assert.equal(outside.marked.data, 'keep');
+    assert.equal(outside.cell.children.length, 3);
+  } finally { f.cleanup(); }
+});
+
 test('скрытые кнопки сохраняют горячие клавиши, пустая панель не появляется', async () => {
   const f = fixture(true, { showClean: 'false', showDefault: 'false', showApplyEdits: 'false', showRed: 'false', showGreen: 'false', showYellow: 'false', showCase: 'false', showTextCase: 'false', hotkeyDefault: 'Alt+KeyB' });
   try {

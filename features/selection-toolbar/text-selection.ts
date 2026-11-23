@@ -1,8 +1,7 @@
 import type { TinyEditor } from '../../core/types';
 
 /** Текстовые части выделения, доступные для редактирования. Разметка не заменяется. */
-export function selectedTextParts(editor: TinyEditor) {
-  const range = editor.selection.getRng();
+export function selectedTextParts(editor: TinyEditor, range = editor.selection.getRng()) {
   const common = range.commonAncestorContainer;
   const walker = editor.getDoc().createTreeWalker(common, NodeFilter.SHOW_TEXT);
   let node = common.nodeType === Node.TEXT_NODE ? common : walker.nextNode();
