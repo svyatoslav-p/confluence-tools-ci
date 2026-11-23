@@ -95,6 +95,45 @@ function paint(editor: TinyEditor, color: string) {
   editor.nodeChanged();
 }
 
+function paintAdded(editor: TinyEditor, color: string) {
+  const range = editor.selection.getRng();
+  const node = range.commonAncestorContainer;
+  const element = node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement;
+  if (element?.closest('a[href]')) return;
+
+  const links = [...(element?.querySelectorAll('a[href]') ?? [])].filter((link) => range.intersectsNode(link));
+  if (!links.length) return paint(editor, color);
+
+  editor.undoManager.transact(() => {
+    const rest = editor.selection.getRng().cloneRange();
+    const parts: Range[] = [];
+    for (const link of links) {
+      const before = rest.cloneRange();
+      before.setEndBefore(link);
+      if (!before.collapsed) parts.push(before);
+      rest.setStartAfter(link);
+    }
+    if (!rest.collapsed) parts.push(rest);
+    if (!parts.length) return;
+
+    const bookmark = editor.selection.getBookmark();
+    try {
+      keepListItemStyles(editor, () => {
+        const value = editorColor(color);
+        // Идём от конца выделения, чтобы форматирование не сдвигало границы следующих фрагментов.
+        for (const part of parts.reverse()) {
+          if (!part.toString()) continue;
+          editor.selection.setRng(part);
+          if (!editor.selection.isCollapsed()) editor.formatter.apply('forecolor', { value });
+        }
+      });
+    } finally {
+      editor.selection.moveToBookmark(bookmark);
+    }
+  });
+  editor.nodeChanged();
+}
+
 /** Отдельный inline-формат не меняет цвет родительского абзаца или списка. */
 function defaultStyle(editor: TinyEditor) {
   editor.undoManager.transact(() => {
@@ -195,7 +234,7 @@ function setupEditor(ctx: FeatureContext & { editor: TinyEditor }): () => void {
     { text: 'Tx', title: 'Очистить стиль', visible: values.showClean, hotkey: values.hotkeyClean, run: () => clean(editor) },
     { text: 'A↺', title: 'Стиль по умолчанию', visible: values.showDefault, hotkey: values.hotkeyDefault, run: () => defaultStyle(editor) },
     { text: '−', title: 'Удалено', visible: values.showRed, color: values.redColor, hotkey: values.hotkeyRed, run: () => redStrike(editor, values) },
-    { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paint(editor, values.greenColor) },
+    { text: '+', title: 'Добавлено', visible: values.showGreen, color: values.greenColor, hotkey: values.hotkeyGreen, run: () => paintAdded(editor, values.greenColor) },
     { text: '', title: 'Устарело', more: true, visible: values.showYellow, hotkey: values.hotkeyYellow, run: () => paint(editor, values.yellowColor) },
     { text: '', title: 'Camel/Snake', more: true, visible: values.showCase, hotkey: values.hotkeyCase,
       available: () => Boolean(selectedIdentifier(editor)), run: () => convertIdentifier(editor) },

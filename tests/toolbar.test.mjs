@@ -147,6 +147,36 @@ test('обход списков ограничен областью выделе
   } finally { f.cleanup(); }
 });
 
+test('«Добавлено» форматирует только части выделения между ссылками и восстанавливает выделение', () => {
+  const f = fixture();
+  try {
+    const links = [{ start: 3, end: 6 }, { start: 9, end: 12 }];
+    f.body.querySelectorAll = (selector) => selector === 'a[href]' ? links : [];
+    const text = 'до abc и xyz после';
+    const makeRange = (start, end) => ({
+      start, end, commonAncestorContainer: f.body,
+      get collapsed() { return this.start === this.end; },
+      cloneRange() { return makeRange(this.start, this.end); },
+      intersectsNode(link) { return link.start < this.end && link.end > this.start; },
+      setEndBefore(link) { this.end = link.start; this.start = Math.min(this.start, this.end); },
+      setStartAfter(link) { this.start = link.end; this.end = Math.max(this.start, this.end); },
+      toString() { return text.slice(this.start, this.end); },
+    });
+    const original = makeRange(4, text.length);
+    let current = original;
+    f.selection.getRng = () => current;
+    f.selection.setRng = (range) => { current = range; };
+    f.selection.getBookmark = () => current;
+    f.selection.moveToBookmark = f.selection.setRng;
+    const formatted = [];
+    f.editor.formatter.apply = (name, { value }) => formatted.push([name, value, current.toString()]);
+    input(f.toolbar.children.find((button) => button.getAttribute('aria-label') === 'Добавлено'), 'click');
+    assert.deepEqual(formatted.map((call) => call[2]), [' после', ' и ']);
+    assert.ok(formatted.every(([name, value]) => name === 'forecolor' && value.includes('#1F845A')));
+    assert.equal(current, original);
+  } finally { f.cleanup(); }
+});
+
 test('стандартный стиль снимает зачёркивание, возвращает цвет ссылок и удаляет служебные метки', () => {
   const f = fixture();
   try {

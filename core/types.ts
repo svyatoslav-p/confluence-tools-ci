@@ -11,6 +11,8 @@ export interface TinyEditor {
   selection: {
     getRng(): Range;
     setRng(range: Range): void;
+    getBookmark(): object;
+    moveToBookmark(bookmark: object): void;
     getSel(): Selection | null;
     isCollapsed(): boolean;
   };
