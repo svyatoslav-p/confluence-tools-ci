@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
 test('смена регистра сохраняет части выделения, оформление, ссылки и учитывает изменение длины Unicode', () => {
-  const { toggleTextCase } = loadTs('features/selection-toolbar/text-selection.ts', { globals: {
+  const { toggleTextCase } = loadTs('src/features/selection-toolbar/text-selection.ts', { globals: {
     Node: { TEXT_NODE: 3 }, NodeFilter: { SHOW_TEXT: 4 },
   } });
   const parent = { style: 'color:green', href: '/page', closest: () => null };

@@ -4,7 +4,7 @@ import { loadTs } from './load-ts.mjs';
 
 const source = 'https://api.github.com/repos/svyatoslav-p/confluence-tools-ci/releases/latest';
 const permission = 'https://api.github.com/*';
-const { parseVersion, compareVersions, availableUpdate } = loadTs('core/update-source.ts');
+const { parseVersion, compareVersions, availableUpdate } = loadTs('src/core/update-source.ts');
 
 test('popup использует только результат проверки релиза для установленной версии', () => {
   const state = { source, installedVersion: '0.1.2', version: '0.1.3', checking: true };
@@ -44,7 +44,7 @@ function fixture() {
     runtime: { id: 'test', getManifest: () => ({ version: installedVersion }),
       onMessage: event('message'), onStartup: event('startup'), onInstalled: event('installed') },
   };
-  const api = loadTs('core/updates.ts', { globals: { chrome, AbortSignal, Error, fetch: async (url, options) => {
+  const api = loadTs('src/core/updates.ts', { globals: { chrome, AbortSignal, Error, fetch: async (url, options) => {
     requests.push({ url, options });
     if (revokeDuringFetch) granted = false;
     if (offline) throw Error('offline');

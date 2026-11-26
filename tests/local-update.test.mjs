@@ -11,7 +11,7 @@ const files = Object.fromEntries(['background.js', 'bridge.js', 'app.js', 'optio
 files['manifest.json'] = strToU8(JSON.stringify(manifest));
 
 const dependencies = { fflate: { strFromU8, unzipSync } };
-const { readReleaseZip } = loadTs('core/update-release.ts', { imports: dependencies });
+const { readReleaseZip } = loadTs('src/core/update-release.ts', { imports: dependencies });
 
 test('выбор папки передаёт Chrome допустимый идентификатор и запрашивает запись', async () => {
   const folder = {};
@@ -21,7 +21,7 @@ test('выбор папки передаёт Chrome допустимый иде�
     assert.equal(mode, 'readwrite');
     return folder;
   } };
-  const { chooseInstallFolder } = loadTs('core/local-install.ts', { globals: { window } });
+  const { chooseInstallFolder } = loadTs('src/core/local-install.ts', { globals: { window } });
   assert.equal(await chooseInstallFolder(), folder);
 });
 
@@ -32,7 +32,7 @@ test('кнопка установки показывается только пр
     '#install-update-panel': 'panel', '#install-update': 'button',
     '#choose-update-folder': 'folder', '#install-update-status': 'status',
   };
-  const { createUpdateInstaller } = loadTs('entrypoints/options/install-update.ts', {
+  const { createUpdateInstaller } = loadTs('src/entrypoints/options/install-update.ts', {
     globals: {
       document: { querySelector: (selector) => controls.get(selectors[selector]) },
       chrome: {
@@ -83,7 +83,7 @@ test('установщик загружает только ZIP заданног�
   const asset = { name: filename, state: 'uploaded', size: bytes.length, digest: 'sha256:' + digest, browser_download_url: url };
   const paths = [];
   const release = { tag_name: 'v' + version, draft: false, prerelease: false, assets: [asset] };
-  const { downloadRelease } = loadTs('core/update-release.ts', { imports: dependencies, globals: {
+  const { downloadRelease } = loadTs('src/core/update-release.ts', { imports: dependencies, globals: {
     AbortSignal, crypto, Uint8Array, fetch: async (request, options) => {
       paths.push(request);
       assert.equal(options.credentials, 'omit');
@@ -135,7 +135,7 @@ test('проверка папки отличает установленную к
   const contents = [['manifest.json', new Blob([JSON.stringify(manifest)])]];
   const installed = directory(new Map(contents));
   const sameBuild = directory(new Map(contents));
-  const { validateInstallFolder } = loadTs('core/local-install.ts', { globals: { crypto, chrome: { runtime: {
+  const { validateInstallFolder } = loadTs('src/core/local-install.ts', { globals: { crypto, chrome: { runtime: {
     getManifest: () => manifest,
     getPackageDirectoryEntry: (callback) => callback({
       getFile: (name, options, found, missing) => installed.storage.has(name) ? found() : missing(),
@@ -148,7 +148,7 @@ test('проверка папки отличает установленную к
 });
 
 test('при ошибке записи нового манифеста возвращаются старые файлы', async () => {
-  const { replaceBundle } = loadTs('core/local-install.ts', { globals: { Blob, DOMException } });
+  const { replaceBundle } = loadTs('src/core/local-install.ts', { globals: { Blob, DOMException } });
   const folder = directory(new Map([['manifest.json', new Blob(['old manifest'])], ['app.js', new Blob(['old app'])]]), 'manifest.json');
   const update = new Map([['manifest.json', strToU8('new manifest')], ['app.js', strToU8('new app')], ['new.js', strToU8('new asset')]]);
   await assert.rejects(replaceBundle(folder, update), /write denied/);

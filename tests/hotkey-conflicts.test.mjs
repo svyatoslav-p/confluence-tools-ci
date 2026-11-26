@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { findHotkeyConflict } = loadTs('core/hotkeys.ts');
+const { findHotkeyConflict } = loadTs('src/core/hotkeys.ts');
 
 test('сочетания проверяются между модулями только при пересечении контекстов', () => {
   const field = { key: 'key', type: 'hotkey', hotkeyMode: 'editor', default: 'Alt+KeyB' };

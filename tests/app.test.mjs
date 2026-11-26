@@ -23,7 +23,7 @@ function fixture() {
     count.starts[id]++; return () => { count.stops[id]++; };
   } }));
   const origin = 'http://example.com:8095';
-  const { startApp } = loadTs('core/app.ts', { globals: {
+  const { startApp } = loadTs('src/core/app.ts', { globals: {
     window, document, location: { origin }, setInterval: () => ++count.intervals,
     clearInterval: (id) => { if (id !== undefined) count.cleared++; },
   }, imports: {
@@ -216,7 +216,7 @@ test('наблюдатель темы отключается явной функ
     observe() { connected = true; }
     disconnect() { connected = false; disconnects++; }
   }
-  const { watchTheme } = loadTs('core/theme.ts', { globals: {
+  const { watchTheme } = loadTs('src/core/theme.ts', { globals: {
     MutationObserver: Observer, document: { documentElement: { getAttribute: () => current } },
   } });
   const host = { setAttribute: (_, value) => { host.theme = value; } };

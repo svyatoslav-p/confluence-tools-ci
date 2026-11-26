@@ -12,7 +12,7 @@ function fixture(states, { disabled = [], broken = [], missing = [], noContent =
     click() { clicks.push(i); if (!broken.includes(i)) this.expanded = !this.expanded; },
   }));
   const containers = buttons.map((button, i) => ({ matches: () => !code.includes(i), querySelector: () => missing.includes(i) ? null : button }));
-  const api = loadTs('features/spoilers/index.ts', { globals: {
+  const api = loadTs('src/features/spoilers/index.ts', { globals: {
     document: { querySelector: (selector) => {
       assert.equal(selector, '#main-content');
       return noContent ? null : { querySelectorAll: () => containers };

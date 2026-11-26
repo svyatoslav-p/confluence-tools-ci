@@ -1,6 +1,7 @@
 import { defineConfig } from 'wxt';
 
 export default defineConfig({
+  srcDir: 'src',
   manifest: {
     name: 'Confluence Tools CI',
     description: 'Набор инструментов для Confluence: быстрые действия в редакторе и операции со страницами',

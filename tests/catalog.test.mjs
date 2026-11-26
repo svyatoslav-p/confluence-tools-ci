@@ -5,10 +5,11 @@ import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
 test('у каждого модуля есть согласованные описание и реализация с уникальным id', () => {
-  const folders = fs.readdirSync('features', { withFileTypes: true }).filter((entry) => entry.isDirectory());
+  const featureRoot = 'src/features';
+  const folders = fs.readdirSync(featureRoot, { withFileTypes: true }).filter((entry) => entry.isDirectory());
   const ids = new Set();
   for (const folder of folders) {
-    const directory = path.join('features', folder.name);
+    const directory = path.join(featureRoot, folder.name);
     for (const file of ['definition.ts', 'index.ts']) {
       assert.ok(fs.existsSync(path.join(directory, file)), `${directory}: отсутствует ${file}`);
     }

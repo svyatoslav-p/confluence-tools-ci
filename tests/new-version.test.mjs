@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { planDraft, jiraIssueKey } = loadTs('features/new-version/draft.ts');
+const { planDraft, jiraIssueKey } = loadTs('src/features/new-version/draft.ts');
 const page = (id, title) => ({ id, title });
 
 test('следующая версия выбирается по числовым частям и учитывает существующие draft', () => {
@@ -24,7 +24,7 @@ test('ключ Jira можно пропустить, регистр букв п�
 
 test('REST-клиент читает все страницы списка и проверяет ограничения исходника перед копированием', async () => {
   const paths = [];
-  const { createClient } = loadTs('features/new-version/confluence.ts', { globals: {
+  const { createClient } = loadTs('src/features/new-version/confluence.ts', { globals: {
     location: { origin: 'https://example.org' }, AbortSignal,
     async fetch(url) {
       paths.push(url.pathname);

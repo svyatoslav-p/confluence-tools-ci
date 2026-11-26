@@ -7,8 +7,8 @@ const feature = { id: 'panel', settings: [
   { key: 'always', type: 'boolean', default: 'false' },
   { key: 'key', type: 'hotkey', default: 'Alt+KeyZ' },
 ] };
-const { normalizeSettings, normalizeHost, hostToPattern } = loadTs('core/settings.ts');
-const { eventToHotkey, isHotkey } = loadTs('core/hotkeys.ts');
+const { normalizeSettings, normalizeHost, hostToPattern } = loadTs('src/core/settings.ts');
+const { eventToHotkey, isHotkey } = loadTs('src/core/hotkeys.ts');
 
 test('повреждённые настройки не приводят к исключению или неверному типу', () => {
   for (const raw of [null, [], 12, 'text', { hosts: ['bad host', null, 'ftp://test'] },
@@ -33,7 +33,7 @@ test('общая приостановка сохраняется отдельн�
   const settings = normalizeSettings({ enabled: false, features: { panel: { enabled: true, values: {} } } }, [feature]);
   assert.equal(settings.enabled, false); assert.equal(settings.features.panel.enabled, true);
   let saved;
-  const { saveSettings } = loadTs('core/storage.ts', { globals: {
+  const { saveSettings } = loadTs('src/core/storage.ts', { globals: {
     chrome: { storage: { local: { set: async (value) => { saved = value; } } } },
   }, imports: { './definitions': { definitions: [feature] } } });
   await saveSettings(settings);
@@ -51,7 +51,7 @@ test('адреса нормализуются и не включают учёт�
 
 test('без сохранённых адресов расширение не подставляет адрес тестового стенда', async () => {
   let stored;
-  const { loadHosts, loadSettings } = loadTs('core/storage.ts', { globals: {
+  const { loadHosts, loadSettings } = loadTs('src/core/storage.ts', { globals: {
     chrome: { storage: { local: { get: async () => stored } } },
   }, imports: { './definitions': { definitions: [] } } });
   for (stored of [{}, { settings: {} }, { settings: { hosts: 'https://example.com' } }]) {
@@ -73,7 +73,7 @@ test('клавиши зависят от code и одинаковы для ру�
 test('мост отбрасывает malformed, чужое окно и чужой origin', () => {
   let receive;
   const window = { location: { origin: 'https://example.com' }, addEventListener: (_, cb) => { receive = cb; }, removeEventListener() {} };
-  const { onBridge } = loadTs('core/bridge.ts', { globals: { window }, imports: { './definitions': { definitions: [feature] } } });
+  const { onBridge } = loadTs('src/core/bridge.ts', { globals: { window }, imports: { './definitions': { definitions: [feature] } } });
   const messages = [];
   onBridge((message) => messages.push(message));
   const emit = (data, source = window, origin = window.location.origin) => receive({ data, source, origin });
@@ -101,7 +101,7 @@ test('регистрация не меняется при настройке ц�
     runtime: { id: 'extension', onInstalled: event('installed'), onStartup: event('startup'), onMessage: event('message'), openOptionsPage: async () => {} },
     action: { onClicked: event('action') }, storage: { onChanged: event('storage') },
   };
-  loadTs('entrypoints/background.ts', { globals: { chrome }, imports: {
+  loadTs('src/entrypoints/background.ts', { globals: { chrome }, imports: {
     '../core/updates': { setupUpdateChecks() {} },
     '#imports': { defineBackground: (callback) => callback() },
     '../core/storage': { loadHosts: async () => state.hosts },
@@ -122,7 +122,7 @@ test('регистрация не меняется при настройке ц�
 test('background читает hosts без обращения к описаниям модулей', async () => {
   const definitions = {};
   Object.defineProperty(definitions, 'definitions', { get() { throw Error('Unexpected feature access'); } });
-  const { loadHosts } = loadTs('core/storage.ts', { globals: {
+  const { loadHosts } = loadTs('src/core/storage.ts', { globals: {
     chrome: { storage: { local: { get: async () => ({ settings: { hosts: ['https://example.com/a', 'https://example.com'] } }) } } },
   }, imports: { './definitions': definitions } });
   const hosts = await loadHosts();
@@ -131,7 +131,7 @@ test('background читает hosts без обращения к описани�
 
 test('подписка на хранилище возвращает точную функцию отписки', () => {
   let receive, removed;
-  const { onSettingsChanged } = loadTs('core/storage.ts', { globals: {
+  const { onSettingsChanged } = loadTs('src/core/storage.ts', { globals: {
     chrome: { storage: { onChanged: { addListener: (callback) => { receive = callback; }, removeListener: (callback) => { removed = callback; } } } },
   }, imports: { './definitions': { definitions: [feature] } } });
   const values = [];

@@ -46,7 +46,7 @@ function fixture(always = true, overrides = {}) {
     iframeElement: { getBoundingClientRect: () => ({ left: 0, top: 100, bottom: 650 }) },
     undoManager: { transact: (callback) => callback() },
     formatter: { register() {}, remove: (...args) => calls.push(['remove', ...args]), apply: (...args) => calls.push(args) } };
-  const { default: feature } = loadTs('features/selection-toolbar/index.ts', { globals: {
+  const { default: feature } = loadTs('src/features/selection-toolbar/index.ts', { globals: {
     window, document, Node: { ELEMENT_NODE: 1, TEXT_NODE: 3, DOCUMENT_POSITION_FOLLOWING: 4 }, NodeFilter: { SHOW_TEXT: 4 },
   } });
   const values = Object.fromEntries(feature.settings.map((field) => [field.key, field.default]));
@@ -326,7 +326,7 @@ test('можно оставить только выбранные кнопки �
 });
 
 test('имена преобразуются в обе стороны только для обратимых форм', () => {
-  const { toggleIdentifier } = loadTs('features/selection-toolbar/identifier.ts');
+  const { toggleIdentifier } = loadTs('src/features/selection-toolbar/identifier.ts');
   for (const [snake, camel] of [['oper_plan_draft_id', 'operPlanDraftId'], ['api_response_v2', 'apiResponseV2']]) {
     assert.equal(toggleIdentifier(snake), camel);
     assert.equal(toggleIdentifier(camel), snake);
@@ -337,7 +337,7 @@ test('имена преобразуются в обе стороны тольк�
 });
 
 test('выделенное имя может состоять из нескольких узлов с одинаковым оформлением и включать пробелы', () => {
-  const { selectedIdentifier } = loadTs('features/selection-toolbar/identifier.ts', { globals: {
+  const { selectedIdentifier } = loadTs('src/features/selection-toolbar/identifier.ts', { globals: {
     Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 }, NodeFilter: { SHOW_TEXT: 4 },
   } });
   const block = { nodeType: 1 };

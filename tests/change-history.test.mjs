@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { loadTs } from './load-ts.mjs';
 
-const { compareHistoryVersions, historyTableOptions } = loadTs('features/change-history/tables.ts');
+const { compareHistoryVersions, historyTableOptions } = loadTs('src/features/change-history/tables.ts');
 
 test('параметры поиска истории сохраняют умолчания и разрешают поиск только по колонкам', () => {
   const defaults = historyTableOptions();
@@ -27,7 +27,7 @@ function fixture({ changed = true, updated = false, status = 200 } = {}) {
   const requests = [], messages = [], values = { historyHeading: 'Журнал изменений', historyVersionHeader: 'Релиз' };
   const child = { id: '2', title: '[v1.1] Example', space: { key: 'SPC' }, ancestors: [{ id: '1' }], body: { storage: { value: 'child' } } };
   const parent = { title: 'Parent', version: { number: 5 }, body: { storage: { value: 'original' } } };
-  const feature = loadTs('features/change-history/index.ts', { globals: {
+  const feature = loadTs('src/features/change-history/index.ts', { globals: {
     document: { querySelector: (selector) => ({ content: selector.includes('ajs-page-id') ? '2' : '/confluence' }) },
     location: { origin: 'https://example.org' }, AbortSignal,
     fetch: async (url, options) => {
